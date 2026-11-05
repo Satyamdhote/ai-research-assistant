@@ -22,7 +22,24 @@ const TavilyResponseSchema = z.object({
 
 // Every result we return starts with one of three markers, so the model can tell
 // "search worked" from "search worked but found nothing" from "search failed".
+export type SearchOutcome = "SEARCH_OK" | "SEARCH_OK_NO_RESULTS" | "SEARCH_UNAVAILABLE";
 const unavailable = (reason: string) => `SEARCH_UNAVAILABLE: ${reason}`;
+
+// Reads back what a search result says, so the APPLICATION (not a model) can record
+// what really happened and which URLs were really returned.
+// Returns undefined for anything that is not a search result (for example an "Error: ..." line).
+export function readSearchResult(
+  text: string
+): { outcome: SearchOutcome; urls: string[] } | undefined {
+  if (text.startsWith("SEARCH_OK_NO_RESULTS")) return { outcome: "SEARCH_OK_NO_RESULTS", urls: [] };
+  if (text.startsWith("SEARCH_UNAVAILABLE")) return { outcome: "SEARCH_UNAVAILABLE", urls: [] };
+  if (text.startsWith("SEARCH_OK:")) {
+    // Result lines look like "   URL: https://..." (see the formatting at the end of searchWeb).
+    const urls = [...text.matchAll(/^ {3}URL: (\S+)$/gm)].map((match) => match[1] as string);
+    return { outcome: "SEARCH_OK", urls };
+  }
+  return undefined;
+}
 
 // Search text goes into the model's context, so keep it on one line and short.
 function clean(text: string, maxChars: number): string {
@@ -39,7 +56,8 @@ function isHttpsUrl(value: string): boolean {
   }
 }
 
-export async function searchWeb(query: string): Promise<string> {
+// timeoutMs lets the caller shorten the wait so a search can never outlive the request deadline.
+export async function searchWeb(query: string, timeoutMs = 10_000): Promise<string> {
   // The key is read here, when a search is actually requested, not at startup.
   // Without it the rest of the app (ordinary questions, get_current_date) still works.
   const apiKey = process.env.TAVILY_API_KEY?.trim();
@@ -55,7 +73,7 @@ export async function searchWeb(query: string): Promise<string> {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(timeoutMs),
       body: JSON.stringify({
         query,
         search_depth: "basic", // 1 credit per search (advanced costs 2)

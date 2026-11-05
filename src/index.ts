@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import process from "process";
-import { askLLM } from "./llm.js";
+import { answerQuestion } from "./agents.js";
 
 // Port 3000 by default; override with e.g. `PORT=3001 npm start` if it is taken.
 const PORT = Number(process.env.PORT) || 3000;
@@ -43,10 +43,11 @@ const server = createServer(async (req, res) => {
 
   // 2. Ask the LLM. Log details server-side, return a generic error to the client.
   try {
-    const result = await askLLM(question.trim());
+    const result = await answerQuestion(question.trim());
     sendJson(res, 200, result);
   } catch (error) {
-    console.error("LLM request failed:", error);
+    // Our errors carry fixed messages, so only the message is logged (no objects or stacks).
+    console.error("Request failed:", error instanceof Error ? error.message : "unknown error");
     sendJson(res, 502, { error: "The AI model could not answer. Try again." });
   }
 });

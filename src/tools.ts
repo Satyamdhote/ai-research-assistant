@@ -5,6 +5,11 @@ import { searchWeb } from "./search.js";
 // (a name, a description and the shape of the arguments), never our code. It can
 // ask for a tool by name; our code decides whether and how to run it.
 
+export type ToolName = "get_current_date" | "search_web";
+export function isToolName(name: string): name is ToolName {
+  return name === "get_current_date" || name === "search_web";
+}
+
 // What the LLM sees. This is OpenRouter's (OpenAI-style) chat-completions tool format.
 export const toolDefinitions = [
   {
@@ -38,6 +43,11 @@ export const toolDefinitions = [
     },
   },
 ];
+
+// Each agent only gets the tools it is allowed to use (an agent with none gets an empty list).
+export function getToolDefinitions(names: ToolName[]) {
+  return toolDefinitions.filter((tool) => names.includes(tool.function.name as ToolName));
+}
 
 // Arguments are model-generated text, so we validate them before running anything.
 // .strict() rejects unexpected extra arguments.
@@ -74,7 +84,9 @@ function parseArgs(rawArgs: string): unknown {
 export async function runTool(
   name: string,
   rawArgs: string,
-  budget: ToolBudget
+  budget: ToolBudget,
+  // Only needs to know how much of the request's time is left.
+  clock: { remainingMs(): number }
 ): Promise<string> {
   if (name === "get_current_date") {
     const args = parseArgs(rawArgs);
@@ -96,9 +108,15 @@ export async function runTool(
     if (budget.searchesLeft <= 0) {
       return "Error: search limit reached for this request";
     }
+    // Never start a search that cannot finish inside the request deadline, and never let
+    // it run longer than the time that is left.
+    const remaining = clock.remainingMs();
+    if (remaining < 1_000) {
+      return "Error: request time limit reached";
+    }
     // A failed attempt still uses up the budget, so a broken provider can't be retried in a loop.
     budget.searchesLeft -= 1;
-    return searchWeb(parsed.data.query);
+    return searchWeb(parsed.data.query, Math.min(10_000, remaining));
   }
 
   return "Error: unknown tool";
