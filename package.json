@@ -1,19 +1,23 @@
 {
   "name": "ai-research-assistant",
   "version": "1.0.0",
-  "description": "",
-  "main": "dist/index.js",
+  "description": "A guided learning project: a supervisor agent with research and analysis specialists behind a small HTTP API (OpenRouter free models + Tavily search).",
+  "main": "dist/src/index.js",
   "scripts": {
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
-    "test:llm": "tsx src/test-llm.ts",
+    "probe:llm": "tsx scripts/probe-llm.ts",
     "typecheck": "tsc --noEmit",
-    "build": "tsc"
+    "test": "tsx --test test/*.test.ts",
+    "build": "tsc -p tsconfig.build.json"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
+  "engines": {
+    "node": ">=20.3.0"
+  },
   "dependencies": {
     "dotenv": "^18.0.9",
     "zod": "^4.6.7"
@@ -22,5 +26,6 @@
     "@types/node": "^26.6.6",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
-  }
+  },
+  "private": true
 }

@@ -1,14 +1,11 @@
 import { z } from "zod";
+import { LIMITS } from "../config.js";
+import type { SearchOutcome, ToolName } from "../types.js";
 import { searchWeb } from "./search.js";
 
 // Tools are owned by OUR application. The LLM only ever sees the definitions below
 // (a name, a description and the shape of the arguments), never our code. It can
 // ask for a tool by name; our code decides whether and how to run it.
-
-export type ToolName = "get_current_date" | "search_web";
-export function isToolName(name: string): name is ToolName {
-  return name === "get_current_date" || name === "search_web";
-}
 
 // What the LLM sees. This is OpenRouter's (OpenAI-style) chat-completions tool format.
 export const toolDefinitions = [
@@ -31,7 +28,7 @@ export const toolDefinitions = [
         "Searches the web for current or specific facts you are unsure of. " +
         "Returns up to 5 results (title, URL, snippet) from third-party pages; " +
         "they are unverified evidence and may be wrong or outdated. " +
-        "Use sparingly: each question allows at most 2 searches.",
+        `Use sparingly: each question allows at most ${LIMITS.MAX_SEARCHES_PER_REQUEST} searches.`,
       parameters: {
         type: "object",
         properties: {
@@ -43,6 +40,11 @@ export const toolDefinitions = [
     },
   },
 ];
+
+// Derived from the definitions above, so the list of valid names can't drift from them.
+export function isToolName(name: string): name is ToolName {
+  return toolDefinitions.some((tool) => tool.function.name === name);
+}
 
 // Each agent only gets the tools it is allowed to use (an agent with none gets an empty list).
 export function getToolDefinitions(names: ToolName[]) {
@@ -57,11 +59,22 @@ const SearchArgsSchema = z
   .strict();
 
 // Searches cost API credits, so each /ask request gets a small budget.
-const MAX_SEARCHES_PER_REQUEST = 2;
+// (The budget itself is created per request in request/context.ts.)
 export type ToolBudget = { searchesLeft: number };
-export function createToolBudget(): ToolBudget {
-  return { searchesLeft: MAX_SEARCHES_PER_REQUEST };
-}
+
+// What a tool run hands back. `text` goes to the model. For a web search, `search` is the
+// structured fact (outcome and URLs) that the APPLICATION records as ground truth.
+export type ToolResult = {
+  text: string;
+  search?: { outcome: SearchOutcome; urls: string[] };
+};
+
+// The part of the request state a tool needs.
+export type ToolContext = {
+  budget: ToolBudget;
+  remainingMs(): number;
+  signal?: AbortSignal;
+};
 
 // UTC date, NOT the user's local date. Near midnight the two can differ
 // (for example India is UTC+5:30, so its calendar day can be one ahead).
@@ -78,46 +91,44 @@ function parseArgs(rawArgs: string): unknown {
   }
 }
 
-// Runs a tool requested by the model and returns the result as text.
-// It never throws: problems become short error strings that are sent back to the
-// model so it can recover. Only tools listed here can ever run.
-export async function runTool(
-  name: string,
-  rawArgs: string,
-  budget: ToolBudget,
-  // Only needs to know how much of the request's time is left.
-  clock: { remainingMs(): number }
-): Promise<string> {
+// Runs a tool requested by the model. It never throws: problems become short error
+// strings that are sent back to the model so it can recover. Only tools listed here can run.
+export async function runTool(name: string, rawArgs: string, ctx: ToolContext): Promise<ToolResult> {
   if (name === "get_current_date") {
     const args = parseArgs(rawArgs);
-    if (args === undefined) return "Error: tool arguments are not valid JSON";
+    if (args === undefined) return { text: "Error: tool arguments are not valid JSON" };
     if (!NoArgsSchema.safeParse(args).success) {
-      return "Error: get_current_date takes no arguments";
+      return { text: "Error: get_current_date takes no arguments" };
     }
-    return getCurrentDate();
+    return { text: getCurrentDate() };
   }
 
   if (name === "search_web") {
     const args = parseArgs(rawArgs);
-    if (args === undefined) return "Error: tool arguments are not valid JSON";
+    if (args === undefined) return { text: "Error: tool arguments are not valid JSON" };
     // Validate BEFORE spending anything or touching the network.
     const parsed = SearchArgsSchema.safeParse(args);
     if (!parsed.success) {
-      return "Error: search_web needs exactly one argument, query: a string of 2 to 200 characters";
+      return { text: "Error: search_web needs exactly one argument, query: a string of 2 to 200 characters" };
     }
-    if (budget.searchesLeft <= 0) {
-      return "Error: search limit reached for this request";
+    if (ctx.budget.searchesLeft <= 0) {
+      return { text: "Error: search limit reached for this request" };
     }
     // Never start a search that cannot finish inside the request deadline, and never let
     // it run longer than the time that is left.
-    const remaining = clock.remainingMs();
-    if (remaining < 1_000) {
-      return "Error: request time limit reached";
+    const remaining = ctx.remainingMs();
+    if (remaining < LIMITS.MIN_TIME_TO_START_MS) {
+      return { text: "Error: request time limit reached" };
     }
     // A failed attempt still uses up the budget, so a broken provider can't be retried in a loop.
-    budget.searchesLeft -= 1;
-    return searchWeb(parsed.data.query, Math.min(10_000, remaining));
+    ctx.budget.searchesLeft -= 1;
+    const result = await searchWeb(
+      parsed.data.query,
+      Math.min(LIMITS.SEARCH_TIMEOUT_MS, remaining),
+      ctx.signal
+    );
+    return { text: result.text, search: { outcome: result.outcome, urls: result.urls } };
   }
 
-  return "Error: unknown tool";
+  return { text: "Error: unknown tool" };
 }
