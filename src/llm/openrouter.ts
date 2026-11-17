@@ -87,6 +87,8 @@ export async function callModel(messages: ChatMessage[], options: ModelCallOptio
   }
 
   if (!response.ok) {
+    // Release the connection; the provider's error text is deliberately never read.
+    await response.body?.cancel().catch(() => undefined);
     throw new Error(describeProviderStatus(response.status));
   }
 
@@ -94,7 +96,9 @@ export async function callModel(messages: ChatMessage[], options: ModelCallOptio
   try {
     data = (await response.json()) as OpenRouterResponse;
   } catch {
-    throw new StageFailure("model_error"); // a 200 whose body is not JSON
+    // The client may have left (or the timeout fired) while the body was still being read.
+    if (ctx.signal?.aborted) throw new Error("Request cancelled");
+    throw new StageFailure("model_error"); // a 200 whose body is not JSON, or one cut off mid-read
   }
   const choice = data.choices?.[0];
   if (!choice?.message) {

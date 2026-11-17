@@ -18,7 +18,13 @@ export type FailureReason =
 
 export type ResearchStageStatus = "not_needed" | "completed" | `failed:${FailureReason}`;
 
-export type ToolName = "get_current_date" | "search_web";
+// The one list of tool names. ToolName, the tool definitions and the runTool handlers are all
+// keyed by it, so a tool added here must be defined and handled (the compiler enforces it).
+export const TOOL_NAMES = ["get_current_date", "search_web"] as const;
+export type ToolName = (typeof TOOL_NAMES)[number];
+
+// Searches cost API credits, so each /ask request gets a small budget (created per request).
+export type ToolBudget = { searchesLeft: number };
 
 // What a real web search returned (decided by the application, never by a model).
 export type SearchOutcome = "SEARCH_OK" | "SEARCH_OK_NO_RESULTS" | "SEARCH_UNAVAILABLE";
