@@ -2,7 +2,7 @@ import { LIMITS } from "../config.js";
 import { callModel } from "../llm/openrouter.js";
 import { logStage } from "../observability/log.js";
 import { StageFailure, type RequestContext } from "../request/context.js";
-import { getToolDefinitions, isToolName, runTool } from "../tools/index.js";
+import { getToolDefinitions, isToolName, runTool, type ToolResult } from "../tools/index.js";
 import { normalizeUrl } from "../tools/searchResult.js";
 import type { ChatMessage, Stage, ToolName } from "../types.js";
 
@@ -59,13 +59,23 @@ export async function runAgent(config: AgentConfig, ctx: RequestContext): Promis
       // 1. Keep the model's complete request in the history, exactly as received.
       messages.push(message);
 
-      // 2. Our code runs each tool, and every tool_call_id gets exactly one result.
-      for (const toolCall of toolCalls) {
+      // 2. Our code runs the requested tools TOGETHER: they all come from one model reply, so
+      //    none of them depends on another. runTool never throws, so Promise.all cannot lose
+      //    a result. Every tool_call_id still gets exactly one result.
+      const results = await Promise.all(
+        toolCalls.map((toolCall) => {
+          const name = toolCall.function.name;
+          return isToolName(name) && allowed.has(name)
+            ? runTool(name, String(toolCall.function.arguments ?? ""), ctx)
+            : Promise.resolve({ text: "Error: unknown tool" }); // not allowed for this agent: treated as if it does not exist
+        })
+      );
+
+      // Recording happens AFTER the parallel part, in the order the model asked, so the
+      // history, logs and search outcomes are the same on every run whatever finishes first.
+      toolCalls.forEach((toolCall, i) => {
         const name = toolCall.function.name;
-        const result =
-          isToolName(name) && allowed.has(name)
-            ? await runTool(name, String(toolCall.function.arguments ?? ""), ctx)
-            : { text: "Error: unknown tool" }; // not allowed for this agent: treated as if it does not exist
+        const result = results[i] as ToolResult;
 
         // The APPLICATION records what really happened (never the model's own claim).
         if (result.search) {
@@ -81,7 +91,7 @@ export async function runAgent(config: AgentConfig, ctx: RequestContext): Promis
         });
 
         messages.push({ role: "tool", tool_call_id: toolCall.id, content: result.text });
-      }
+      });
       // 3. Loop: the model now sees the results and continues.
       continue;
     }

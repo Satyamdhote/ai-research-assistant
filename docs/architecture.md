@@ -13,6 +13,28 @@
 Specialists never talk to each other. Each starts with its own message list (its own context window);
 the orchestrator in `src/agents/orchestrator.ts` decides what crosses between them.
 
+## What runs in parallel (Milestone 7)
+
+| Work | Depends on | Parallel? |
+|---|---|---|
+| Supervisor | the question | no: every later step needs its route |
+| Research | the route | no |
+| Analysis | the research notes | no: it must wait for research (and still runs if research failed) |
+| Tool calls from ONE model reply (up to 3) | the same reply, nothing else | **yes** (`Promise.all` in `runAgent.ts`) |
+
+The agents form a dependency chain, so the only independent work is the tools of one reply.
+Rules that keep this safe:
+
+- `runTool` never throws, so one failed tool cannot lose the others' results.
+- The search budget is checked and spent in one synchronous stretch (no `await` between), so parallel
+  searches cannot both take the last one. Keep it that way.
+- Results are recorded after all tools finish, in the order the model asked, so history, logs and
+  `search_outcomes` are the same on every run.
+- One abort signal reaches every in-flight search.
+
+Measured with mocked 200 ms searches (`test/parallel.test.ts`): 2 searches in one round took about
+420 ms sequentially and about 215 ms in parallel. Model calls, searches and the response are unchanged.
+
 ## Ground truth comes from the application
 
 The analysis agent is told two separate facts, both recorded by our code:
