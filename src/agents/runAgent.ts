@@ -60,8 +60,8 @@ export async function runAgent(config: AgentConfig, ctx: RequestContext): Promis
       messages.push(message);
 
       // 2. Our code runs the requested tools TOGETHER: they all come from one model reply, so
-      //    none of them depends on another. runTool never throws, so Promise.all cannot lose
-      //    a result. Every tool_call_id still gets exactly one result.
+      //    none of them depends on another. runTool only throws when the client has left (the
+      //    whole request is cancelled then), so Promise.all cannot lose a result that matters. Every tool_call_id still gets exactly one result.
       const results = await Promise.all(
         toolCalls.map((toolCall) => {
           const name = toolCall.function.name;

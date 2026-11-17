@@ -1,6 +1,5 @@
 import { LIMITS, getRequestDeadlineMs } from "../config.js";
-import type { ToolBudget } from "../tools/index.js";
-import type { FailureReason, SearchOutcome } from "../types.js";
+import type { FailureReason, SearchOutcome, ToolBudget } from "../types.js";
 
 // A stage-level failure: the model's output (or the call that should have produced it)
 // was unusable. The research stage tolerates these and carries on with honest disclosure.

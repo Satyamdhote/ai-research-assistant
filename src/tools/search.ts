@@ -44,7 +44,8 @@ function toHttpsUrl(value: string): string | undefined {
 }
 
 // timeoutMs lets the caller shorten the wait so a search can never outlive the request
-// deadline; signal lets it stop early when the client disconnects.
+// deadline; signal lets it stop early when the client disconnects
+// (it then throws "Request cancelled", like the model call does).
 export async function searchWeb(
   query: string,
   timeoutMs: number = LIMITS.SEARCH_TIMEOUT_MS,
@@ -76,6 +77,8 @@ export async function searchWeb(
       }),
     });
   } catch (error) {
+    // A client that hung up is not a search outage: stop, and don't record or log one.
+    if (signal?.aborted) throw new Error("Request cancelled", { cause: error });
     const timedOut = error instanceof Error && error.name === "TimeoutError";
     console.error("Search request failed:", timedOut ? "timeout" : "network error");
     return unavailable(timedOut ? "the search timed out" : "could not reach the search service");

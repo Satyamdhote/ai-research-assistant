@@ -73,4 +73,9 @@ test("aborting the request stops all parallel searches", async () => {
   assert.ok(r.error, "the request fails when cancelled");
   assert.ok(r.ms < 1_000, `took ${r.ms} ms, the searches should have been aborted`);
   assert.equal(r.mock.calls.filter((c) => c.agent === "analysis").length, 0);
+  // A hang-up is not a search outage: nothing is logged or recorded as one.
+  const logs = r.mock.logs.join("\n");
+  assert.doesNotMatch(logs, /Search request failed/);
+  assert.doesNotMatch(logs, /SEARCH_UNAVAILABLE/);
+  assert.match(r.error instanceof Error ? r.error.message : "", /Request cancelled/);
 });
