@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "out=$(npm run typecheck --silent 2>&1) || jq -n --arg m \"Typecheck failed: $out\" '{systemMessage: $m}'; true",
+            "timeout": 60,
+            "statusMessage": "Typechecking..."
+          }
+        ]
+      }
+    ]
+  }
+}
