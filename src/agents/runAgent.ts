@@ -79,8 +79,7 @@ export async function runAgent(config: AgentConfig, ctx: RequestContext): Promis
 
         // The APPLICATION records what really happened (never the model's own claim).
         if (result.search) {
-          ctx.searchOutcomes.push(result.search.outcome);
-          for (const url of result.search.urls) ctx.observedUrls.add(normalizeUrl(url));
+          ctx.recordSearch(result.search.outcome, result.search.urls.map(normalizeUrl));
         }
         logStage({
           event: "tool_call",

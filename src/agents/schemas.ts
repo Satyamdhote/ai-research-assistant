@@ -91,7 +91,7 @@ export type Notes = {
 // no real search returned. A model cannot attach a URL that never appeared in a search
 // result: the claim stays, but is marked unsourced. (This checks only that the URL was
 // really returned. It does NOT check that the claim is supported by that page.)
-export function parseNotes(text: string, observedUrls: Set<string>): Notes {
+export function parseNotes(text: string, observedUrls: ReadonlySet<string>): Notes {
   let json: unknown;
   try {
     json = parseJsonText(text);

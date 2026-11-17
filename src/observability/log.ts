@@ -24,7 +24,7 @@ export type StageLog = {
   finishReason?: FinishReason;
   toolCalls?: number;
   tool?: ToolName | "<invalid>";
-  searchOutcomes?: SearchOutcome[];
+  searchOutcomes?: readonly SearchOutcome[];
   route?: Route;
   routeFallback?: boolean;
   researchStage?: ResearchStageStatus;

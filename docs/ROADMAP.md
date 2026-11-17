@@ -42,13 +42,13 @@ Build a practical, API-only multi-agent AI research assistant while learning the
 | 5 | Web search integration | Complete |
 | 6 | Supervisor and specialist agents | Complete |
 | 7 | Parallel agent execution (scoped to parallel tool calls) | Complete |
-| 8 | Shared context and state management | **Next** |
-| 9 | Evidence verification | Planned |
+| 8 | Shared context and state management | Complete |
+| 9 | Evidence verification | **Next** |
 | 10 | Human approval workflow | Planned |
 | 11 | Retries, error handling, and observability | Planned |
 | 12 | Production evolution | Planned |
 
-**Current next action:** Plan Milestone 8 (shared context and state management) by inspecting the existing implementation. Do not implement until the plan is reviewed and approved.
+**Current next action:** Plan Milestone 9 (evidence verification) by inspecting the existing implementation. Do not implement until the plan is reviewed and approved.
 
 ---
 
@@ -151,10 +151,6 @@ Build a practical, API-only multi-agent AI research assistant while learning the
 **Not done**
 - Parallel research agents (two research specialists on independent sub-questions). This needs a route schema change and a budget decision, so it needs separate approval.
 
----
-
-## Remaining milestones
-
 ### Milestone 8: Shared context and state management
 
 **Learning objectives**
@@ -163,10 +159,23 @@ Build a practical, API-only multi-agent AI research assistant while learning the
 - Define ownership and mutation rules for shared state.
 - Prevent cross-request data leakage.
 
-**Completion criteria**
-- A clear context/state schema and lifecycle are documented.
-- State is scoped to the request unless persistent storage is explicitly approved.
-- Validation, size limits, and tests cover state updates and isolation.
+**Outcome recorded**
+- Audit: no module-level mutable state in `src/`, so a request's state can only live in its `RequestContext`.
+- `src/request/context.ts` is now the only writer of request state. Other modules read through `readonly` views and change state via `countModelCall()`, `spendSearch()` and `recordSearch()`; the search budget and analysis-reserve switch are private.
+- `callModel` and the tools receive narrow `ModelContext` / `ToolContext` types instead of the full context.
+- New size limit: `MAX_OBSERVED_URLS` (50) caps the observed-URL set; the search budget check-and-spend stays synchronous for parallel tools.
+- Agents still do not share message lists; the orchestrator passes only validated notes plus an application-written status block.
+- Lifecycle, owners and rules documented in `docs/architecture.md` ("Request state").
+- Mocked tests: 62/62 total, 6 new in `test/state.test.ts` (context isolation, budget exhaustion, call numbering, URL de-duplication and cap, reserve reset, two overlapping requests with no leakage). Typecheck, lint and build pass.
+- No live API tests; model-call, search, deadline limits and the `/ask` contract unchanged.
+
+**Not done**
+- No persistence or state store (not approved; state stays request-scoped).
+- `recordSearch` relies on the caller to pass normalized URLs (`normalizeUrl` lives in `tools`).
+
+---
+
+## Remaining milestones
 
 ### Milestone 9: Evidence verification
 
