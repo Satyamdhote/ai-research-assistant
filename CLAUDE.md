@@ -21,7 +21,7 @@ This is a step-by-step learning project about agentic systems. The application i
 ## Learning roadmap
 
 - Read `@docs/ROADMAP.md` when starting a new milestone or resuming work after a context reset.
-- Milestones 1–6 are recorded as complete and Milestone 7 (parallel agent execution) is next. Verify repository evidence before relying on this status. At its start, inspect the Milestone 6 implementation and plan safe concurrency; do not parallelize tasks that depend on unfinished research.
+- Milestones 1–7 are recorded as complete and Milestone 8 (shared context and state management) is next. Verify repository evidence before relying on this status. At its start, inspect the current request context (`src/request/context.ts`) and plan request-scoped state with clear ownership.
 - Follow the roadmap in order unless I explicitly approve a change.
 - Do not start a future milestone while the current milestone is unfinished.
 - Keep `docs/ROADMAP.md` as the concise progress tracker and `learning.md` as the append-only learning journal.
