@@ -120,6 +120,9 @@ export async function runTool(name: string, rawArgs: string, ctx: ToolContext): 
     if (remaining < LIMITS.MIN_TIME_TO_START_MS) {
       return { text: "Error: request time limit reached" };
     }
+    // IMPORTANT: the budget check above and the decrement below must stay in the same synchronous
+    // stretch (no `await` between them). Tools of one round run in parallel, and this is what
+    // stops two of them from both spending the last search.
     // A failed attempt still uses up the budget, so a broken provider can't be retried in a loop.
     ctx.budget.searchesLeft -= 1;
     const result = await searchWeb(
