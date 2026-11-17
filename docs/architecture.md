@@ -45,12 +45,39 @@ The analysis agent is told two separate facts, both recorded by our code:
 Source URLs in the notes are kept only if a real search returned them (compared without a trailing slash).
 That proves a URL was returned, not that a claim is supported by that page.
 
+## Request state (Milestone 8)
+
+All state of one question lives in one `RequestContext` (`src/request/context.ts`). It is created by
+`answerQuestion()`, passed down explicitly and dropped when the request ends. Nothing is stored in a
+module-level variable, so one request cannot see another's state (`test/state.test.ts` runs two overlapping
+requests to check this). Nothing is persisted.
+
+| Field | Meaning | Written by (only through) |
+|---|---|---|
+| `modelCalls` | model calls started | `callModel` via `countModelCall()` |
+| search budget (private) | searches left (2) | `search_web` via `spendSearch()` |
+| `searchOutcomes` | what each real search returned, in order | `runAgent` via `recordSearch()` |
+| `observedUrls` | normalized URLs real results contained, capped at 50 | `runAgent` via `recordSearch()` |
+| `reserveActive` (private switch) | analysis time is held back | `withAnalysisReserved()` |
+| `startedAt`, `signal`, `remainingMs()` | fixed at creation | nobody |
+
+Rules:
+
+- The context module is the only writer. Other modules get read-only views (`readonly` arrays, `ReadonlySet`)
+  and change state through the three methods, which hold the rules (limits, de-duplication, the URL cap).
+- Each module takes only what it needs: `callModel` a `ModelContext`, tools a `ToolContext`.
+- `spendSearch()` checks and spends in one synchronous step, so parallel tools cannot both take the last search.
+- `recordSearch()` expects URLs already normalized (`normalizeUrl` lives in `tools`, and `request` must not import it).
+- Agents do not share message lists. What crosses between specialists is chosen by the orchestrator: validated
+  notes plus the application-written status block, never another agent's history.
+
 ## Limits (all in `src/config.ts`)
 
 | Limit | Value |
 |---|---|
 | Model calls per question | typical 2 (concept) or 4 (one search); design max 5; hard cap 6 |
 | Searches per question | 2 |
+| Observed URLs per question | 50 (backstop; 2 searches give at most 10) |
 | Tool calls per round | 3 (more fails before anything runs) |
 | Whole-question deadline | 90 s, checked before every network call; per-call timeouts are bounded by the time left |
 | Analysis reserve | 25 s is held back while researching, so slow research cannot starve the analysis |

@@ -7,6 +7,7 @@ export const LIMITS = {
   MAX_TOOL_CALLS_PER_ROUND: 3, // an agent may request at most 3 tools at once
   MAX_MODEL_CALLS_PER_REQUEST: 6, // backstop across ALL agents for one question
   MAX_SEARCHES_PER_REQUEST: 2, // each search costs a Tavily credit
+  MAX_OBSERVED_URLS: 50, // backstop for the per-request URL set (2 searches x 5 results = 10 today)
   DEFAULT_DEADLINE_MS: 90_000, // one shared time limit for the whole question
   ANALYSIS_RESERVE_MS: 25_000, // time kept back so research can never starve the analysis
   MIN_TIME_TO_START_MS: 1_000, // never start a network call with less than this left

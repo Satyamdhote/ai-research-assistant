@@ -1,6 +1,6 @@
 import { LIMITS, debugEnabled, getOpenRouterConfig } from "../config.js";
 import { logStage, traceContext, traceReply, type FinishReason, type StageLog } from "../observability/log.js";
-import { StageFailure, type RequestContext } from "../request/context.js";
+import { StageFailure, type ModelContext } from "../request/context.js";
 import type { getToolDefinitions } from "../tools/index.js";
 import type { AssistantMessage, ChatMessage, Stage } from "../types.js";
 
@@ -37,7 +37,7 @@ function describeProviderStatus(status: number): string {
 //  - the call may not outlive the time left for the current stage
 //  - provider errors (401/402/429/...) stay plain Errors so they are never hidden
 //  - network problems and unreadable replies become a StageFailure (an unusable stage output)
-export async function callModel(messages: ChatMessage[], options: ModelCallOptions, ctx: RequestContext) {
+export async function callModel(messages: ChatMessage[], options: ModelCallOptions, ctx: ModelContext) {
   if (ctx.signal?.aborted) {
     throw new Error("Request cancelled");
   }
@@ -51,8 +51,7 @@ export async function callModel(messages: ChatMessage[], options: ModelCallOptio
     // Same rule as the time limit: while researching, this degrades to a stage failure.
     throw ctx.reserveActive ? new StageFailure("call_limit") : new Error("Model call limit reached");
   }
-  ctx.modelCalls += 1;
-  const callNumber = ctx.modelCalls;
+  const callNumber = ctx.countModelCall();
   traceContext(options.stage, callNumber, messages);
 
   const { apiKey, model } = getOpenRouterConfig();

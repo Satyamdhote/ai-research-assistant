@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { LIMITS } from "../config.js";
-import { TOOL_NAMES, type SearchOutcome, type ToolBudget, type ToolName } from "../types.js";
+import type { ToolContext } from "../request/context.js";
+import { TOOL_NAMES, type SearchOutcome, type ToolName } from "../types.js";
 import { searchWeb } from "./search.js";
 
 // Tools are owned by OUR application. The LLM only ever sees the definitions below
@@ -72,13 +73,6 @@ export type ToolResult = {
   search?: { outcome: SearchOutcome; urls: string[] };
 };
 
-// The part of the request state a tool needs.
-export type ToolContext = {
-  budget: ToolBudget;
-  remainingMs(): number;
-  signal?: AbortSignal;
-};
-
 // UTC date, NOT the user's local date. Near midnight the two can differ
 // (for example India is UTC+5:30, so its calendar day can be one ahead).
 function getCurrentDate(): string {
@@ -102,20 +96,16 @@ const handlers: Record<ToolName, ToolHandler> = {
     if (!parsed.success) {
       return { text: "Error: search_web needs exactly one argument, query: a string of 2 to 200 characters" };
     }
-    if (ctx.budget.searchesLeft <= 0) {
-      return { text: "Error: search limit reached for this request" };
-    }
     // Never start a search that cannot finish inside the request deadline, and never let
     // it run longer than the time that is left.
     const remaining = ctx.remainingMs();
     if (remaining < LIMITS.MIN_TIME_TO_START_MS) {
       return { text: "Error: request time limit reached" };
     }
-    // IMPORTANT: the budget check above and the decrement below must stay in the same synchronous
-    // stretch (no `await` between them). Tools of one round run in parallel, and this is what
-    // stops two of them from both spending the last search.
-    // A failed attempt still uses up the budget, so a broken provider can't be retried in a loop.
-    ctx.budget.searchesLeft -= 1;
+    // Take the search from the budget (check and spend happen together, see spendSearch).
+    if (!ctx.spendSearch()) {
+      return { text: "Error: search limit reached for this request" };
+    }
     const result = await searchWeb(
       parsed.data.query,
       Math.min(LIMITS.SEARCH_TIMEOUT_MS, remaining),
