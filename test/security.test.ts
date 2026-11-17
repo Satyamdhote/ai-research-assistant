@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { getOpenRouterConfig, traceEnabled } from "../src/config.js";
 import { parseJsonText } from "../src/llm/parseJson.js";
 import { normalizeUrl } from "../src/tools/searchResult.js";
-import { REPORT, TEST_KEY, TEST_TAVILY_KEY, notes, run, setTestEnv, type Script } from "./helpers/mock.js";
+import { REPORT, TEST_KEY, TEST_TAVILY_KEY, run, setTestEnv, type Script } from "./helpers/mock.js";
 
 test("config: only explicitly free models are accepted", () => {
   setTestEnv();

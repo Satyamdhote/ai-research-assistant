@@ -2,7 +2,7 @@
 
 A small Node + TypeScript API that answers research questions with a **supervisor agent** and two
 specialist agents (research and analysis). It is a step-by-step learning project about Claude and
-agentic systems, built on Node's built-in `node:http` (no web framework).
+agentic systems, built on Express 5.
 
 - Models: [OpenRouter](https://openrouter.ai) **free models only** (`:free` model IDs; the app refuses to start otherwise).
 - Web search: [Tavily](https://tavily.com) free plan (optional; the app works without it).
@@ -66,7 +66,7 @@ See [docs/architecture.md](docs/architecture.md) for the details and the safety 
 src/index.ts            entry point (load .env, check config, listen)
 src/config.ts           every environment variable and every limit
 src/types.ts            shared types
-src/http/               server.ts (routes, status codes), readBody.ts (size-limited body)
+src/http/               server.ts (Express routes, size-limited JSON body, status codes)
 src/agents/             orchestrator.ts (the flow), runAgent.ts (bounded tool loop),
                         schemas.ts (route, notes, report), prompts.ts (one prompt per role)
 src/llm/                openrouter.ts (the only OpenRouter caller), parseJson.ts
