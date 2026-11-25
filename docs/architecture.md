@@ -45,6 +45,8 @@ The analysis agent is told two separate facts, both recorded by our code:
 Source URLs in the notes are kept only if a real search returned them (compared without a trailing slash).
 That proves a URL was returned, not that a claim is supported by that page.
 
+**Evidence verification (Milestone 9).** After research, `src/agents/verify.ts` (plain code, no model call) compares each finding with the search snippet stored for its URL (`ctx.observedSnippets`, capped at `MAX_STORED_SNIPPET_CHARS` per URL). Statuses: `supported` (snippet shares >= 40% of the claim's key terms, contains every number in the claim, and the claim and the best-matching snippet sentence agree on negation), `weak` (observed URL, but the key terms, a number or the negation do not match), `conflicting` (two findings on the same subject where one negates, or both give different numbers for the same thing, i.e. after the same key word; facts that merely contain different numbers are not a conflict), `unsourced` (no observed URL), `unverified` (the check itself failed; the request still succeeds). These are keyword heuristics over snippets, not full-page reading. A research model that copies a snippet's wording into its claim can still earn `supported`, so the status means "the claim resembles the snippet", not "the claim is true". Statuses go to the analysis stage in the input block and are returned as the additive `evidence` field of `/ask`.
+
 ## Request state (Milestone 8)
 
 All state of one question lives in one `RequestContext` (`src/request/context.ts`). It is created by

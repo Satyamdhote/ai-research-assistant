@@ -26,6 +26,16 @@ export type ToolName = (typeof TOOL_NAMES)[number];
 // What a real web search returned (decided by the application, never by a model).
 export type SearchOutcome = "SEARCH_OK" | "SEARCH_OK_NO_RESULTS" | "SEARCH_UNAVAILABLE";
 
+// How well the application could check a finding against what searches really returned.
+// Computed by code (src/agents/verify.ts), never by a model.
+//   supported:   its URL was returned by a search AND the snippet shares the claim's key terms
+//   weak:        its URL was returned, but the snippet barely overlaps the claim (possibly irrelevant)
+//   conflicting: another finding on the same subject disagrees (negation or different numbers)
+//   unsourced:   no usable source URL (none given, or not returned by any search)
+//   unverified:  verification itself failed
+export type EvidenceStatus = "supported" | "weak" | "conflicting" | "unsourced" | "unverified";
+export type EvidenceItem = { claim: string; source_url: string | null; status: EvidenceStatus };
+
 // OpenRouter chat messages. The assistant message is kept as an open object on purpose:
 // when the model asks for a tool we must send the WHOLE message back unchanged
 // (including fields such as reasoning_details), so we never rebuild or trim it.

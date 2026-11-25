@@ -24,7 +24,7 @@ curl -s -X POST localhost:3000/ask \
   -d '{"question":"What is an AI agent?"}'
 ```
 
-The response is always a report with exactly these fields: `title`, `summary`, `key_findings`, `risks`, `conclusion`.
+The response is a report with these fields: `title`, `summary`, `key_findings`, `risks`, `conclusion`. When web research ran, it also has an optional `evidence` array: one `{claim, source_url, status}` per research finding, where `status` is computed by the application (`supported`, `weak`, `conflicting`, `unsourced`, `unverified`), never by a model. `supported` means the cited source's search snippet shares the claim's key terms, contains every number the claim states, and does not contradict its negation. It is not proof the claim is true.
 
 | Status | Meaning |
 |---|---|

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { getOpenRouterConfig, traceEnabled } from "../src/config.js";
 import { parseJsonText } from "../src/llm/parseJson.js";
 import { normalizeUrl } from "../src/tools/searchResult.js";
-import { REPORT, TEST_KEY, TEST_TAVILY_KEY, run, setTestEnv, type Script } from "./helpers/mock.js";
+import { REPORT, TEST_KEY, TEST_TAVILY_KEY, run, setTestEnv, type Script, reportOnly } from "./helpers/mock.js";
 
 test("config: only explicitly free models are accepted", () => {
   setTestEnv();
@@ -45,7 +45,7 @@ const sensitiveScript = (): Script => ({
 for (const debug of [false, true]) {
   test(`logs contain no credentials, reasoning or user content (DEBUG_LLM=${debug ? 1 : "off"})`, async () => {
     const r = await run(sensitiveScript(), "SENTINEL_QUESTION about something", undefined, debug ? { DEBUG_LLM: "1" } : {});
-    assert.deepEqual(r.value, REPORT);
+    assert.deepEqual(reportOnly(r.value), REPORT);
     const output = r.mock.logs.join("\n");
     assert.ok(output.includes("[agent]"), "stage lines are printed");
     for (const secret of [...sentinels, TEST_KEY, TEST_TAVILY_KEY, "Authorization", "Bearer"]) {

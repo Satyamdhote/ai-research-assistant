@@ -24,6 +24,7 @@ export type RequestContext = {
   readonly modelCalls: number; // model calls started so far (changed by countModelCall)
   readonly searchOutcomes: readonly SearchOutcome[]; // what each real search returned (changed by recordSearch)
   readonly observedUrls: ReadonlySet<string>; // normalized URLs that real search results contained (changed by recordSearch)
+  readonly observedSnippets: ReadonlyMap<string, string>; // normalized URL -> search snippet text (changed by recordSearch)
   /** Milliseconds the CURRENT stage may still use (the analysis reserve is held back while researching). */
   remainingMs(): number;
   /** While true, remainingMs() excludes the time reserved for the analysis stage. */
@@ -32,8 +33,8 @@ export type RequestContext = {
   countModelCall(): number;
   /** Takes one search from the per-request budget. False when none is left. Synchronous on purpose. */
   spendSearch(): boolean;
-  /** Records what a real search returned. `urls` must already be normalized. */
-  recordSearch(outcome: SearchOutcome, urls: readonly string[]): void;
+  /** Records what a real search returned. `urls` must already be normalized; `snippets` (optional) is parallel to `urls`. */
+  recordSearch(outcome: SearchOutcome, urls: readonly string[], snippets?: readonly string[]): void;
 };
 
 // The part of the context a model call needs.
@@ -60,6 +61,7 @@ export function createRequestContext(signal?: AbortSignal): RequestContext {
   let reserveActive = false;
   const searchOutcomes: SearchOutcome[] = [];
   const observedUrls = new Set<string>();
+  const observedSnippets = new Map<string, string>();
 
   const ctx: RequestContext = {
     startedAt,
@@ -72,6 +74,9 @@ export function createRequestContext(signal?: AbortSignal): RequestContext {
     },
     get observedUrls() {
       return observedUrls;
+    },
+    get observedSnippets() {
+      return observedSnippets;
     },
     get reserveActive() {
       return reserveActive;
@@ -86,12 +91,17 @@ export function createRequestContext(signal?: AbortSignal): RequestContext {
       searchesLeft -= 1;
       return true;
     },
-    recordSearch(outcome, urls) {
+    recordSearch(outcome, urls, snippets = []) {
       searchOutcomes.push(outcome);
-      for (const url of urls) {
-        if (observedUrls.size >= LIMITS.MAX_OBSERVED_URLS) break;
+      urls.forEach((url, i) => {
+        if (observedUrls.size >= LIMITS.MAX_OBSERVED_URLS && !observedUrls.has(url)) return;
         observedUrls.add(url);
-      }
+        const snippet = snippets[i];
+        // The first snippet seen for a URL wins; later searches cannot overwrite it.
+        if (snippet !== undefined && !observedSnippets.has(url)) {
+          observedSnippets.set(url, snippet.slice(0, LIMITS.MAX_STORED_SNIPPET_CHARS));
+        }
+      });
     },
   };
   reserveSwitches.set(ctx, (on) => {

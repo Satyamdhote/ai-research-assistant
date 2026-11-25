@@ -70,7 +70,7 @@ const SearchArgsSchema = z
 // structured fact (outcome and URLs) that the APPLICATION records as ground truth.
 export type ToolResult = {
   text: string;
-  search?: { outcome: SearchOutcome; urls: string[] };
+  search?: { outcome: SearchOutcome; urls: string[]; snippets: string[] };
 };
 
 // UTC date, NOT the user's local date. Near midnight the two can differ
@@ -111,7 +111,7 @@ const handlers: Record<ToolName, ToolHandler> = {
       Math.min(LIMITS.SEARCH_TIMEOUT_MS, remaining),
       ctx.signal
     );
-    return { text: result.text, search: { outcome: result.outcome, urls: result.urls } };
+    return { text: result.text, search: { outcome: result.outcome, urls: result.urls, snippets: result.snippets } };
   },
 };
 

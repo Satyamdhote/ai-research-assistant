@@ -43,12 +43,12 @@ Build a practical, API-only multi-agent AI research assistant while learning the
 | 6 | Supervisor and specialist agents | Complete |
 | 7 | Parallel agent execution (scoped to parallel tool calls) | Complete |
 | 8 | Shared context and state management | Complete |
-| 9 | Evidence verification | **Next** |
-| 10 | Human approval workflow | Planned |
+| 9 | Evidence verification | Complete |
+| 10 | Human approval workflow | **Next** |
 | 11 | Retries, error handling, and observability | Planned |
 | 12 | Production evolution | Planned |
 
-**Current next action:** Plan Milestone 9 (evidence verification) by inspecting the existing implementation. Do not implement until the plan is reviewed and approved.
+**Current next action:** Plan Milestone 10 (human approval workflow) by inspecting the existing implementation. Do not implement until the plan is reviewed and approved.
 
 ---
 
@@ -173,10 +173,6 @@ Build a practical, API-only multi-agent AI research assistant while learning the
 - No persistence or state store (not approved; state stays request-scoped).
 - `recordSearch` relies on the caller to pass normalized URLs (`normalizeUrl` lives in `tools`).
 
----
-
-## Remaining milestones
-
 ### Milestone 9: Evidence verification
 
 **Learning objectives**
@@ -190,6 +186,23 @@ Build a practical, API-only multi-agent AI research assistant while learning the
 - Claims cannot be marked verified solely because an agent says so.
 - Mock tests cover missing, irrelevant, conflicting, and unobserved sources.
 - The report clearly distinguishes supported findings from uncertainty.
+
+**Outcome recorded**
+- `src/agents/verify.ts` (pure code, no model call) gives each research finding a status: `supported`, `weak`, `conflicting`, `unsourced` or `unverified`. Status never comes from a model.
+- `recordSearch` now also stores a capped snippet per observed URL (`observedSnippets`, `MAX_STORED_SNIPPET_CHARS` 700); still written only by `request/context.ts`.
+- The analysis stage receives `evidence_check` counts and a status per finding; its prompt separates supported findings from uncertainty.
+- `/ask` has an additive optional `evidence` array (present only when research ran); other fields unchanged. This API change was explicitly approved by the user on 2026-11-25 (code review finding 5). Output is validated by `EvidenceListSchema`; a verification failure degrades to `unverified` instead of failing the request.
+- Review fixes (2026-11-25): `supported` now also requires every number in the claim to appear in the snippet and the claim to agree with its best-matching snippet sentence on negation; `conflicting` compares numbers only when they follow the same key word, and a bare `no` (as in "no. 1") is no longer a negation.
+- Mocked tests: 84/84 (22 new: 19 in `test/verify.test.ts`, 2 in `test/agents.test.ts`, 1 HTTP end-to-end including prompt-injection text in a snippet). Typecheck, lint and build pass; suite run 3 times with no flakes (before the verifier was tightened).
+- Live test (approved, 1 request): 4 model calls, 1 Tavily search, HTTP 200, `evidence` present with 4 findings all `supported`. The model noted a v26.13.0 vs v26.13.1 discrepancy in `risks` that the heuristic did not flag. Verification adds no model or search calls; all limits unchanged. Docs updated (`README.md`, `docs/architecture.md`).
+
+**Not done**
+- Heuristics only: keyword overlap on snippets, not full pages or semantic checks. A model that copies snippet wording into a claim can still earn `supported`. Thresholds (0.4 / 0.5) are untuned and unverified against real search results.
+- "Unobserved" is merged into `unsourced` because `parseNotes` already drops unobserved URLs.
+
+---
+
+## Remaining milestones
 
 ### Milestone 10: Human approval workflow
 

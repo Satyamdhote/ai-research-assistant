@@ -51,6 +51,14 @@ export const REPORT = {
   conclusion: "A conclusion",
 };
 
+// The report fields only: drops the app-computed `evidence` (Milestone 9) so older tests keep checking the report itself.
+export function reportOnly(value: unknown): unknown {
+  if (value === undefined || value === null) return value;
+  const rest = { ...(value as Record<string, unknown>) };
+  delete rest.evidence;
+  return rest;
+}
+
 export const route = (kind: "analysis_only" | "research_then_analysis", task = "look up the facts") =>
   JSON.stringify(
     kind === "analysis_only"

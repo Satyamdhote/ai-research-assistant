@@ -13,6 +13,7 @@ export const SEARCH_MARKERS = {
 export type SearchResult = {
   outcome: SearchOutcome;
   urls: string[]; // https URLs that really appeared in the results
+  snippets: string[]; // title + snippet text of each URL, same order as `urls`
   text: string;
 };
 
