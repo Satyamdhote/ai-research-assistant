@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { REPORT, notes, route, run, type Script } from "./helpers/mock.js";
+import { REPORT, notes, route, run, type Script, reportOnly } from "./helpers/mock.js";
 
 // Milestone 7: the tool calls of ONE model reply run in parallel. They are independent
 // (they come from the same reply); research -> analysis stays sequential (it is a dependency).
@@ -20,7 +20,7 @@ const toolMessages = (r: Awaited<ReturnType<typeof run>>) =>
 
 test("two searches in one round overlap in time", async () => {
   const r = await run(twoSearches([{ delayMs: DELAY, results: [result(1)] }, { delayMs: DELAY, results: [result(2)] }]));
-  assert.deepEqual(r.value, REPORT);
+  assert.deepEqual(reportOnly(r.value), REPORT);
   assert.equal(r.mock.searches.length, 2);
   // Sequential would take >= 2 * DELAY = 400 ms; parallel takes about one DELAY.
   assert.ok(r.ms < DELAY * 1.75, `took ${r.ms} ms, expected well under ${DELAY * 2} ms`);
@@ -42,7 +42,7 @@ test("results keep the order the model asked, even if the second search finishes
 
 test("one failing search does not lose the other result", async () => {
   const r = await run(twoSearches([{ status: 500 }, { results: [result(2)] }]));
-  assert.deepEqual(r.value, REPORT);
+  assert.deepEqual(reportOnly(r.value), REPORT);
   const tools = toolMessages(r);
   assert.equal(tools.length, 2);
   assert.doesNotMatch(tools[0].content, /Snippet/);
@@ -55,7 +55,7 @@ test("3 parallel searches make exactly 2 Tavily requests (the budget cannot be o
   const r = await run(
     twoSearches([{ delayMs: 50, results: [result(1)] }], [search("one query"), search("two query"), search("three query")])
   );
-  assert.deepEqual(r.value, REPORT);
+  assert.deepEqual(reportOnly(r.value), REPORT);
   assert.equal(r.mock.searches.length, 2);
   const tools = toolMessages(r);
   assert.equal(tools.length, 3);

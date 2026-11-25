@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_RESULTS, REPORT, notes, route, run, type Script } from "./helpers/mock.js";
+import { DEFAULT_RESULTS, REPORT, notes, route, run, type Script, reportOnly } from "./helpers/mock.js";
 
 const search = (query = "latest facts") => ({ name: "search_web", args: { query } });
 const date = () => ({ name: "get_current_date", args: {} });
@@ -13,7 +13,7 @@ const researchScript = (research: Script["research"], extra: Partial<Script> = {
 
 test("analysis_only: exactly 2 model calls, no tools sent, no search", async () => {
   const r = await run({ supervisor: [{ content: route("analysis_only") }], analysis: [{ content: JSON.stringify(REPORT) }] });
-  assert.deepEqual(r.value, REPORT);
+  assert.deepEqual(reportOnly(r.value), REPORT);
   assert.deepEqual(r.mock.calls.map((c) => c.agent), ["supervisor", "analysis"]);
   assert.ok(r.mock.calls.every((c) => !("tools" in c.body)), "supervisor and analysis must not get a tools field");
   assert.equal(r.mock.searches.length, 0);
@@ -23,7 +23,7 @@ test("analysis_only: exactly 2 model calls, no tools sent, no search", async () 
 
 test("research happy path: 4 calls, 1 search, ground truth passed to analysis", async () => {
   const r = await run(researchScript([{ toolCalls: [search()] }, { content: notes() }]));
-  assert.deepEqual(r.value, REPORT);
+  assert.deepEqual(reportOnly(r.value), REPORT);
   assert.deepEqual(r.mock.calls.map((c) => c.agent), ["supervisor", "research", "research", "analysis"]);
   assert.equal(r.mock.searches.length, 1);
   assert.match(r.mock.analysisInput(), /search_outcomes: SEARCH_OK/);
@@ -49,13 +49,13 @@ test("every request is free-only, allows no fallback, and tools are limited per 
 
 test("two tool rounds are allowed: 3 research calls, 5 calls in total", async () => {
   const r = await run(researchScript([{ toolCalls: [search()] }, { toolCalls: [date()] }, { content: notes() }]));
-  assert.deepEqual(r.value, REPORT);
+  assert.deepEqual(reportOnly(r.value), REPORT);
   assert.equal(r.mock.calls.length, 5);
 });
 
 test("a third tool round is refused before anything runs, and the analysis is told honestly", async () => {
   const r = await run(researchScript([{ toolCalls: [search()] }, { toolCalls: [date()] }, { toolCalls: [search("another")] }]));
-  assert.deepEqual(r.value, REPORT);
+  assert.deepEqual(reportOnly(r.value), REPORT);
   assert.equal(r.mock.calls.length, 5); // no 4th research call
   assert.equal(r.mock.searches.length, 1); // the third request's search was NOT executed
   assert.match(r.mock.analysisInput(), /search_outcomes: SEARCH_OK/);
@@ -72,7 +72,7 @@ const matrix: Array<{ name: string; script: Script; outcomes: string; stage: str
 for (const c of matrix) {
   test(`outcome vs stage kept separate: ${c.name}`, async () => {
     const r = await run(c.script);
-    assert.deepEqual(r.value, REPORT);
+    assert.deepEqual(reportOnly(r.value), REPORT);
     assert.match(r.mock.analysisInput(), new RegExp(`search_outcomes: ${c.outcomes}\\n`));
     assert.match(r.mock.analysisInput(), new RegExp(`research_stage: ${c.stage}\\n`));
   });
@@ -90,7 +90,7 @@ const badSupervisor: Array<[string, any]> = [
 for (const [name, reply] of badSupervisor) {
   test(`unusable supervisor output (${name}) falls back to analysis_only`, async () => {
     const r = await run({ supervisor: [reply], analysis: [{ content: JSON.stringify(REPORT) }] });
-    assert.deepEqual(r.value, REPORT);
+    assert.deepEqual(reportOnly(r.value), REPORT);
     assert.deepEqual(r.mock.calls.map((c) => c.agent), ["supervisor", "analysis"]);
     assert.ok(r.mock.logs.some((l) => l.includes("event=route") && l.includes("routeFallback=true")));
   });
@@ -119,7 +119,7 @@ test("3 searches in one round: only 2 run, the third is refused", async () => {
 
 test("more than 3 tool calls in one round: nothing runs, research degrades", async () => {
   const r = await run(researchScript([{ toolCalls: [date(), date(), date(), date()] }]));
-  assert.deepEqual(r.value, REPORT);
+  assert.deepEqual(reportOnly(r.value), REPORT);
   assert.match(r.mock.analysisInput(), /failed:too_many_tool_calls/);
 });
 
@@ -133,19 +133,19 @@ test("a tool the research agent is not allowed to use does not exist for it", as
 
 test("research reply with non-string content degrades (model_error)", async () => {
   const r = await run(researchScript([{ content: [{ type: "text", text: "{}" }] }]));
-  assert.deepEqual(r.value, REPORT);
+  assert.deepEqual(reportOnly(r.value), REPORT);
   assert.match(r.mock.analysisInput(), /failed:model_error/);
 });
 
 test("research network error degrades", async () => {
   const r = await run(researchScript([{ networkError: true }]));
-  assert.deepEqual(r.value, REPORT);
+  assert.deepEqual(reportOnly(r.value), REPORT);
   assert.match(r.mock.analysisInput(), /failed:model_error/);
 });
 
 test("research 200 with a non-JSON body degrades", async () => {
   const r = await run(researchScript([{ badBody: true }]));
-  assert.deepEqual(r.value, REPORT);
+  assert.deepEqual(reportOnly(r.value), REPORT);
   assert.match(r.mock.analysisInput(), /failed:model_error/);
 });
 
@@ -194,4 +194,45 @@ test("search results never contain a URL that is not https", async () => {
     })
   );
   assert.ok(!r.mock.analysisInput().includes("insecure.example"));
+});
+
+// Milestone 9: the application, not the model, decides how well findings are supported.
+const findingsNotes = (findings: Array<{ claim: string; source_url: string | null }>) =>
+  JSON.stringify({ findings, gaps: [] });
+
+test("evidence: supported, irrelevant, unobserved and conflicting findings get app-computed statuses", async () => {
+  const script = researchScript(
+    [
+      { toolCalls: [search()] },
+      {
+        content: findingsNotes([
+          { claim: "claim one", source_url: "https://example.com/one" },
+          { claim: "Totally invented statement about zebras", source_url: "https://example.com/one" },
+          { claim: "Model invented this source", source_url: "https://never-seen.example/x" },
+        ]),
+      },
+    ],
+    {
+      tavily: [
+        {
+          results: [
+            { title: "claim one", url: "https://example.com/one", content: "claim one is described here in detail" },
+          ],
+        },
+      ],
+    }
+  );
+  const r = await run(script);
+  const evidence = (r.value as { evidence?: Array<{ status: string; source_url: string | null }> }).evidence;
+  assert.deepEqual(evidence?.map((e) => e.status), ["supported", "weak", "unsourced"]);
+  assert.equal(evidence?.[2]?.source_url, null, "an unobserved URL is dropped, never cited");
+  assert.match(r.mock.analysisInput(), /evidence_check: supported=1, weak=1, conflicting=0, unsourced=1, unverified=0/);
+  assert.match(r.mock.analysisInput(), /"status":"weak"/);
+  assert.equal(r.mock.calls.length, 4, "verification adds no model call");
+});
+
+test("evidence: omitted when no research ran", async () => {
+  const r = await run({ supervisor: [{ content: route("analysis_only") }], analysis: [{ content: JSON.stringify(REPORT) }] });
+  assert.ok(!("evidence" in (r.value as object)));
+  assert.match(r.mock.analysisInput(), /evidence_check: NOT_USED/);
 });

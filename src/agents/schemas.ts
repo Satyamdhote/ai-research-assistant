@@ -33,6 +33,20 @@ export function parseResearch(text: string): ResearchResult {
 }
 
 // ---------------------------------------------------------------------------
+// Evidence list: produced by our own code (verify.ts), but still checked at the boundary
+// before it is sent to the analysis model and to clients.
+// ---------------------------------------------------------------------------
+export const EvidenceListSchema = z.array(
+  z
+    .object({
+      claim: z.string().min(1),
+      source_url: z.string().nullable(),
+      status: z.enum(["supported", "weak", "conflicting", "unsourced", "unverified"]),
+    })
+    .strict()
+);
+
+// ---------------------------------------------------------------------------
 // Supervisor route.
 // ---------------------------------------------------------------------------
 const RouteSchema = z

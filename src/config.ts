@@ -15,6 +15,13 @@ export const LIMITS = {
   SEARCH_TIMEOUT_MS: 10_000, // longest a single search may take
   MAX_CONCURRENT_REQUESTS: 2, // questions answered at the same time (free quota is small)
   MAX_BODY_BYTES: 10_000, // a question should never be bigger than this
+  MAX_STORED_SNIPPET_CHARS: 700, // per observed URL (title + snippet) kept for verification
+} as const;
+
+// Evidence verification tuning (deterministic heuristics, see src/agents/verify.ts).
+export const VERIFY = {
+  MIN_SUPPORT_OVERLAP: 0.4, // share of a claim's key terms that must appear in its source snippet
+  MIN_SUBJECT_OVERLAP: 0.5, // share of key terms two findings must share to count as the same subject
 } as const;
 
 // Reads the OpenRouter settings and refuses anything that is not an explicitly free model.

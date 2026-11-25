@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { REPORT, notes, route, run, type Script } from "./helpers/mock.js";
+import { REPORT, notes, route, run, type Script, reportOnly } from "./helpers/mock.js";
 
 const report = { content: JSON.stringify(REPORT) };
 const researchRoute = { content: route("research_then_analysis") };
@@ -9,7 +9,7 @@ const search = { name: "search_web", args: { query: "latest facts" } };
 test("a slow research stage cannot starve the analysis (time is reserved for it)", async () => {
   // The research model never answers in time. The analysis reserve keeps it from using it all.
   const r = await run({ supervisor: [researchRoute], research: [{ delayMs: 20_000 }], analysis: [report] }, "q", undefined, { REQUEST_DEADLINE_MS: "4000" });
-  assert.deepEqual(r.value, REPORT);
+  assert.deepEqual(reportOnly(r.value), REPORT);
   assert.deepEqual(r.mock.calls.map((c) => c.agent), ["supervisor", "research", "analysis"]);
   assert.match(r.mock.analysisInput(), /research_stage: failed:model_error/);
   assert.ok(r.ms < 4200, `finished in ${r.ms} ms`);
@@ -23,7 +23,7 @@ test("a slow search is cut off at the time left, and the stage degrades with the
     tavily: [{ delayMs: 20_000 }],
   };
   const r = await run(script, "q", undefined, { REQUEST_DEADLINE_MS: "4000" });
-  assert.deepEqual(r.value, REPORT);
+  assert.deepEqual(reportOnly(r.value), REPORT);
   assert.match(r.mock.analysisInput(), /search_outcomes: SEARCH_UNAVAILABLE/);
   assert.match(r.mock.analysisInput(), /research_stage: failed:time_limit/);
   assert.ok(r.ms < 4200, `finished in ${r.ms} ms`);
