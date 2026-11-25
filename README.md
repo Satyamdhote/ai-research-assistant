@@ -66,7 +66,7 @@ question -> Supervisor -> analysis_only ------------------------> Analysis -> re
 
 Each agent is the same free model with its own role prompt, its own tools and its own context window.
 Our code (not the models) runs them in a fixed order and passes only validated data between them.
-See [docs/architecture.md](docs/architecture.md) for the details and the safety limits.
+See [docs/architecture.md](docs/architecture.md) for the details and the safety limits, and [docs/production-readiness.md](docs/production-readiness.md) for what is missing before real exposure (no authentication yet).
 
 ## Project layout
 

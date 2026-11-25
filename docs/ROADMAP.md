@@ -46,9 +46,9 @@ Build a practical, API-only multi-agent AI research assistant while learning the
 | 9 | Evidence verification | Complete |
 | 10 | Human approval workflow | Complete |
 | 11 | Retries, error handling, and observability | Complete (live success path not confirmed) |
-| 12 | Production evolution | **Next** |
+| 12 | Production evolution | Complete (assessment only; nothing built) |
 
-**Current next action:** Plan Milestone 12 (production evolution) by inspecting the existing implementation. Do not implement until the plan is reviewed and approved.
+**Current next action:** All 12 milestones are recorded. The next slice is whatever the user approves from the prioritized path in `docs/production-readiness.md` (P0: authentication and per-client rate limiting). Plan it before implementing.
 
 ---
 
@@ -277,6 +277,15 @@ Build a practical, API-only multi-agent AI research assistant while learning the
 - Architecture decisions explain why each proposed component is needed.
 - Security, privacy, cost, reliability, and deployment considerations are documented.
 - No infrastructure or paid service is added without explicit approval.
+
+**Outcome recorded**
+- `docs/production-readiness.md`: verified baseline, 14 prioritized gaps (G1-G14), decision records D1-D8 (auth, rate limiting, PostgreSQL, queue, tracing/metrics, deployment, evaluation, CI) each with a trigger and a "do not add yet" decision, a prioritized path, a threat sketch and pre-exposure checklists. Pointers added to `README.md` and `docs/architecture.md`.
+- Scope agreed with the user: documentation only. No source, test, config or dependency changes; no infrastructure or paid service added; no live calls.
+- Checks after the change: typecheck, lint and build pass; 126/126 mocked tests.
+
+**Known limitations**
+- It is an assessment: every gap remains open. Highest priority: no authentication (anyone reaching the port can spend free quota and decide approvals) and no per-client rate limit.
+- Claims about "today" were checked against the code; the facts about deployment tooling (no CI, no health route, no shutdown handler) are absences confirmed by search.
 
 ---
 
