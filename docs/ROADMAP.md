@@ -45,10 +45,10 @@ Build a practical, API-only multi-agent AI research assistant while learning the
 | 8 | Shared context and state management | Complete |
 | 9 | Evidence verification | Complete |
 | 10 | Human approval workflow | Complete |
-| 11 | Retries, error handling, and observability | **Next** |
-| 12 | Production evolution | Planned |
+| 11 | Retries, error handling, and observability | Complete (live success path not confirmed) |
+| 12 | Production evolution | **Next** |
 
-**Current next action:** Plan Milestone 11 (retries, error handling, and observability) by inspecting the existing implementation. Do not implement until the plan is reviewed and approved.
+**Current next action:** Plan Milestone 12 (production evolution) by inspecting the existing implementation. Do not implement until the plan is reviewed and approved.
 
 ---
 
@@ -229,10 +229,6 @@ Build a practical, API-only multi-agent AI research assistant while learning the
 - State is in memory only (lost on restart); a pending question keeps its concurrency slot for up to the TTL.
 - Expiry and parallel approvals are covered by mocked tests only, not live. The token and reserve changes rest on two live runs and provider speed varies.
 
----
-
-## Remaining milestones
-
 ### Milestone 11: Retries, error handling, and observability
 
 **Learning objectives**
@@ -246,6 +242,27 @@ Build a practical, API-only multi-agent AI research assistant while learning the
 - Errors are classified and exposed safely to API clients.
 - Logs avoid credentials, raw sensitive content, and unnecessary model reasoning.
 - Mock tests cover retry limits, timeouts, and failure paths.
+
+**Approved API additions (2026-11-25).** The user approved: a fixed `code` and `request_id` on every error body (success bodies unchanged), the `X-Request-Id` header, `GET /metrics`, and search-only retries (at most one, spending the same search budget).
+
+**Outcome recorded**
+- Error taxonomy in `src/errors.ts`: one fixed `ErrorCode` per failure, mapped to HTTP by `toClientError`. Statuses and messages are unchanged (a 502 stays a 502); the body adds `code` and `request_id`. No provider text, model output or key reaches clients.
+- Search retry: transient failures only (timeout, network, 5xx), at most once, 500 ms fixed backoff. The retry spends one of the 2 searches, so Tavily requests stay at most 2 per question; it needs time for the pause plus a usable call, stops if the client leaves, and does not ask the human again. 401, 429, 432 and 433 are never retried. Model calls are never retried (deliberate).
+- Correlation: opaque UUID `request_id` in the header, error bodies, and `requestId=` on the structured log lines of a question; new `request_failed` log with the code.
+- Metrics: in-memory, numbers only (`src/observability/metrics.ts`), served at `GET /metrics`.
+- Mocked tests: 126/126 (26 new: taxonomy, retry limits, permanent failures, shared budget, deadline, abort during backoff, approval asked once, ids on log lines, no query/question/key in logs or metrics, counters). Typecheck, lint and build pass.
+- Live tests (approved), 2 runs: both returned 502 because the free provider was slow (12 to 17 s per call), not because of these changes. Run 1: 2 model calls, 0 searches (unusable supervisor reply, then an analysis timeout). Run 2 (`DEBUG_LLM=1`): 5 model calls, 2 searches, the analysis call ran out of the 90 s deadline. They confirmed on the real path: error body with `error`, `code`, `request_id`; header matching every log line; `request_failed` with `code=model_unavailable`; `/metrics` matching the run. **A successful live answer was not achieved in this milestone.**
+
+**Known limitations**
+- Search retry is verified by mocks only; a transient Tavily failure cannot be forced live.
+- A slow free provider can still exhaust the 90 s deadline (three research calls at about 13 s each leave too little for analysis). Budgets were deliberately not changed.
+- `/metrics` has no authentication; counters are per process and reset on restart.
+- `parse_failed` and plain `console.error` lines carry no request id. `bad_request` also covers 404, 405 and 409. Fixed 500 ms backoff, no jitter.
+
+
+---
+
+## Remaining milestones
 
 ### Milestone 12: Production evolution
 

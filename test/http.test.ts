@@ -65,7 +65,10 @@ test("502 with a generic message, and no key or provider text in it", async () =
     const res = await post(url, JSON.stringify({ question: "q" }));
     assert.equal(res.status, 502);
     const text = await res.text();
-    assert.deepEqual(JSON.parse(text), { error: "The AI model could not answer. Try again." });
+    const body = JSON.parse(text) as Record<string, string>;
+    assert.deepEqual({ error: body.error, code: body.code }, { error: "The AI model could not answer. Try again.", code: "rate_limited" });
+    assert.deepEqual(Object.keys(body).sort(), ["code", "error", "request_id"]);
+    assert.equal(body.request_id, res.headers.get("x-request-id"));
     assert.ok(!text.includes(TEST_KEY));
   });
 });

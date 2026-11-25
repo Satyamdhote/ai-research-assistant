@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LIMITS } from "../config.js";
+import { AppError } from "../errors.js";
 import type { ToolContext } from "../request/context.js";
 import { TOOL_NAMES, type SearchOutcome, type ToolName } from "../types.js";
 import { searchWeb } from "./search.js";
@@ -70,13 +71,30 @@ const SearchArgsSchema = z
 // structured fact (outcome and URLs) that the APPLICATION records as ground truth.
 export type ToolResult = {
   text: string;
-  search?: { outcome: SearchOutcome; urls: string[]; snippets: string[] };
+  search?: { outcome: SearchOutcome; urls: string[]; snippets: string[]; retries: number };
 };
 
 // UTC date, NOT the user's local date. Near midnight the two can differ
 // (for example India is UTC+5:30, so its calendar day can be one ahead).
 function getCurrentDate(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// Waits, but stops at once (and cancels the request) if the client leaves.
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cancel = () => reject(new AppError("cancelled", "Request cancelled"));
+    if (signal?.aborted) return cancel();
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      cancel();
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 type ToolHandler = (args: unknown, ctx: ToolContext) => ToolResult | Promise<ToolResult>;
@@ -110,17 +128,34 @@ const handlers: Record<ToolName, ToolHandler> = {
     // A gated action: nothing is sent until a human approves exactly this query.
     // (The decision is by the application's own record of the query, not by anything the model says.)
     const decision = await ctx.requestApproval({ tool: "search_web", query: parsed.data.query });
-    if (ctx.signal?.aborted) throw new Error("Request cancelled");
+    if (ctx.signal?.aborted) throw new AppError("cancelled", "Request cancelled");
     if (decision !== "approved") {
       ctx.refundSearch(); // nothing was sent, so the reserved search goes back
       return { text: "Error: the search was not approved by a human, so it was not run" };
     }
-    const result = await searchWeb(
-      parsed.data.query,
-      Math.min(LIMITS.SEARCH_TIMEOUT_MS, ctx.remainingMs()), // fresh: the human wait does not count
-      ctx.signal
-    );
-    return { text: result.text, search: { outcome: result.outcome, urls: result.urls, snippets: result.snippets } };
+    const timeLeft = () => Math.min(LIMITS.SEARCH_TIMEOUT_MS, ctx.remainingMs()); // fresh: the human wait does not count
+    let result = await searchWeb(parsed.data.query, timeLeft(), ctx.signal);
+
+    // Bounded retry. Only a TRANSIENT failure is retried, at most MAX_SEARCH_RETRIES times, and a retry
+    // is one more search taken from the same per-request budget (so Tavily requests stay <= 2), only
+    // when the backoff plus a usable call still fit before the deadline. The approved query is
+    // reused unchanged, so no second approval is needed.
+    let retries = 0;
+    while (
+      result.transient &&
+      retries < LIMITS.MAX_SEARCH_RETRIES &&
+      ctx.remainingMs() >= LIMITS.SEARCH_RETRY_BACKOFF_MS + LIMITS.MIN_TIME_TO_START_MS &&
+      ctx.spendSearch()
+    ) {
+      await pause(LIMITS.SEARCH_RETRY_BACKOFF_MS, ctx.signal);
+      if (ctx.remainingMs() < LIMITS.MIN_TIME_TO_START_MS) {
+        ctx.refundSearch(); // not run: give the budget back
+        break;
+      }
+      retries += 1;
+      result = await searchWeb(parsed.data.query, timeLeft(), ctx.signal);
+    }
+    return { text: result.text, search: { outcome: result.outcome, urls: result.urls, snippets: result.snippets, retries } };
   },
 };
 

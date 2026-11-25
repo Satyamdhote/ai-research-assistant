@@ -79,14 +79,16 @@ export async function runAgent(config: AgentConfig, ctx: RequestContext): Promis
 
         // The APPLICATION records what really happened (never the model's own claim).
         if (result.search) {
-          ctx.recordSearch(result.search.outcome, result.search.urls.map(normalizeUrl), result.search.snippets);
+          ctx.recordSearch(result.search.outcome, result.search.urls.map(normalizeUrl), result.search.snippets, result.search.retries);
         }
+        ctx.countToolCall();
         logStage({
           event: "tool_call",
+          requestId: ctx.requestId,
           stage: config.stage,
           call: ctx.modelCalls, // the request-wide number of the model call that asked for this tool
           tool: isToolName(name) ? name : "<invalid>",
-          ...(result.search ? { searchOutcomes: [result.search.outcome] } : {}),
+          ...(result.search ? { searchOutcomes: [result.search.outcome], searchRetries: result.search.retries } : {}),
         });
 
         messages.push({ role: "tool", tool_call_id: toolCall.id, content: result.text });

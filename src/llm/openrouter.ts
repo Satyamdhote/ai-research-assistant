@@ -1,4 +1,5 @@
 import { LIMITS, debugEnabled, getOpenRouterConfig } from "../config.js";
+import { AppError } from "../errors.js";
 import { logStage, traceContext, traceReply, type FinishReason, type StageLog } from "../observability/log.js";
 import { StageFailure, type ModelContext } from "../request/context.js";
 import type { getToolDefinitions } from "../tools/index.js";
@@ -25,12 +26,16 @@ function toFinishReason(value: unknown): FinishReason {
 }
 
 // Turns an HTTP status into a fixed phrase. The provider's own error text is not used.
-function describeProviderStatus(status: number): string {
-  if (status === 401) return "OpenRouter error: authentication failed (401)";
-  if (status === 402) return "OpenRouter error: payment required (402)";
-  if (status === 429) return "OpenRouter error: rate limited (429), the free daily limit may be used up";
-  return `OpenRouter error (${status})`;
+function providerError(status: number): AppError {
+  if (status === 401) return new AppError("auth_failed", "OpenRouter error: authentication failed (401)");
+  if (status === 402) return new AppError("payment_required", "OpenRouter error: payment required (402)");
+  if (status === 429) {
+    return new AppError("rate_limited", "OpenRouter error: rate limited (429), the free daily limit may be used up");
+  }
+  return new AppError("provider_error", `OpenRouter error (${status})`);
 }
+
+const cancelled = () => new AppError("cancelled", "Request cancelled");
 
 // One request to the model. Rules, in order:
 //  - never start a call after the client left, or with too little time (or too many calls) left
@@ -39,17 +44,17 @@ function describeProviderStatus(status: number): string {
 //  - network problems and unreadable replies become a StageFailure (an unusable stage output)
 export async function callModel(messages: ChatMessage[], options: ModelCallOptions, ctx: ModelContext) {
   if (ctx.signal?.aborted) {
-    throw new Error("Request cancelled");
+    throw cancelled();
   }
   const remaining = ctx.remainingMs();
   if (remaining < LIMITS.MIN_TIME_TO_START_MS) {
     // While researching, running out of the research budget is a stage failure (analysis
     // still has its reserved time). Otherwise the whole request is out of time.
-    throw ctx.reserveActive ? new StageFailure("time_limit") : new Error("Request time limit reached");
+    throw ctx.reserveActive ? new StageFailure("time_limit") : new AppError("timeout", "Request time limit reached");
   }
   if (ctx.modelCalls >= LIMITS.MAX_MODEL_CALLS_PER_REQUEST) {
     // Same rule as the time limit: while researching, this degrades to a stage failure.
-    throw ctx.reserveActive ? new StageFailure("call_limit") : new Error("Model call limit reached");
+    throw ctx.reserveActive ? new StageFailure("call_limit") : new AppError("limit_reached", "Model call limit reached");
   }
   const callNumber = ctx.countModelCall();
   traceContext(options.stage, callNumber, messages);
@@ -81,14 +86,14 @@ export async function callModel(messages: ChatMessage[], options: ModelCallOptio
       }),
     });
   } catch {
-    if (ctx.signal?.aborted) throw new Error("Request cancelled");
+    if (ctx.signal?.aborted) throw cancelled();
     throw new StageFailure("model_error"); // timeout or network error
   }
 
   if (!response.ok) {
     // Release the connection; the provider's error text is deliberately never read.
     await response.body?.cancel().catch(() => undefined);
-    throw new Error(describeProviderStatus(response.status));
+    throw providerError(response.status);
   }
 
   let data: OpenRouterResponse;
@@ -96,7 +101,7 @@ export async function callModel(messages: ChatMessage[], options: ModelCallOptio
     data = (await response.json()) as OpenRouterResponse;
   } catch {
     // The client may have left (or the timeout fired) while the body was still being read.
-    if (ctx.signal?.aborted) throw new Error("Request cancelled");
+    if (ctx.signal?.aborted) throw cancelled();
     throw new StageFailure("model_error"); // a 200 whose body is not JSON, or one cut off mid-read
   }
   const choice = data.choices?.[0];
@@ -109,6 +114,7 @@ export async function callModel(messages: ChatMessage[], options: ModelCallOptio
   // One short, text-free line per model call.
   const line: StageLog = {
     event: "model_call",
+    requestId: ctx.requestId,
     stage: options.stage,
     call: callNumber,
     finishReason: toFinishReason(choice.finish_reason),

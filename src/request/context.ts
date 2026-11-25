@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { LIMITS, getRequestDeadlineMs } from "../config.js";
 import type { ApprovalAction, ApprovalDecision, Approver, FailureReason, SearchOutcome } from "../types.js";
 
@@ -19,9 +20,12 @@ export class StageFailure extends Error {
 // Ownership: this module is the ONLY writer. Everyone else reads the fields below and changes
 // state through the three methods, which hold the rules (limits, de-duplication, caps).
 export type RequestContext = {
+  readonly requestId: string; // opaque id for log correlation; carries no user data
   readonly startedAt: number;
   readonly signal?: AbortSignal; // aborted when the client disconnects
   readonly modelCalls: number; // model calls started so far (changed by countModelCall)
+  readonly toolCalls: number; // tool calls run so far (changed by countToolCall)
+  readonly searchRetries: number; // search retries made so far (changed by recordSearch)
   readonly searchOutcomes: readonly SearchOutcome[]; // what each real search returned (changed by recordSearch)
   readonly observedUrls: ReadonlySet<string>; // normalized URLs that real search results contained (changed by recordSearch)
   readonly observedSnippets: ReadonlyMap<string, string>; // normalized URL -> search snippet text (changed by recordSearch)
@@ -31,6 +35,8 @@ export type RequestContext = {
   readonly reserveActive: boolean;
   /** Counts one more model call and returns its request-wide number. The caller checks the limit first. */
   countModelCall(): number;
+  /** Counts one more tool call. */
+  countToolCall(): void;
   /** Takes one search from the per-request budget. False when none is left. Synchronous on purpose. */
   spendSearch(): boolean;
   /** Gives back a search taken by spendSearch that was never run (for example a human said no). */
@@ -41,14 +47,14 @@ export type RequestContext = {
    * expiry bounds the wait. Without an approver (the default) nothing is gated: "approved".
    */
   requestApproval(action: ApprovalAction): Promise<ApprovalDecision>;
-  /** Records what a real search returned. `urls` must already be normalized; `snippets` (optional) is parallel to `urls`. */
-  recordSearch(outcome: SearchOutcome, urls: readonly string[], snippets?: readonly string[]): void;
+  /** Records what a real search returned. `urls` must already be normalized; `snippets` (optional) is parallel to `urls`; `retries` is how many retries it took. */
+  recordSearch(outcome: SearchOutcome, urls: readonly string[], snippets?: readonly string[], retries?: number): void;
 };
 
 // The part of the context a model call needs.
 export type ModelContext = Pick<
   RequestContext,
-  "startedAt" | "signal" | "modelCalls" | "remainingMs" | "reserveActive" | "countModelCall"
+  "requestId" | "startedAt" | "signal" | "modelCalls" | "remainingMs" | "reserveActive" | "countModelCall"
 >;
 
 // The part of the context a tool needs.
@@ -57,7 +63,7 @@ export type ToolContext = Pick<RequestContext, "signal" | "remainingMs" | "spend
 // Only withAnalysisReserved may switch the reserve on or off.
 const reserveSwitches = new WeakMap<RequestContext, (on: boolean) => void>();
 
-export function createRequestContext(signal?: AbortSignal, approver?: Approver): RequestContext {
+export function createRequestContext(signal?: AbortSignal, approver?: Approver, requestId: string = randomUUID()): RequestContext {
   const totalMs = getRequestDeadlineMs();
   const startedAt = Date.now();
   let deadlineAt = startedAt + totalMs; // only requestApproval moves it (human wait time is paused)
@@ -65,6 +71,8 @@ export function createRequestContext(signal?: AbortSignal, approver?: Approver):
   const reserveMs = Math.min(LIMITS.ANALYSIS_RESERVE_MS, Math.floor(totalMs * 0.3));
 
   let modelCalls = 0;
+  let toolCalls = 0;
+  let searchRetries = 0;
   let searchesLeft = LIMITS.MAX_SEARCHES_PER_REQUEST;
   let reserveActive = false;
   const searchOutcomes: SearchOutcome[] = [];
@@ -72,10 +80,17 @@ export function createRequestContext(signal?: AbortSignal, approver?: Approver):
   const observedSnippets = new Map<string, string>();
 
   const ctx: RequestContext = {
+    requestId,
     startedAt,
     signal,
     get modelCalls() {
       return modelCalls;
+    },
+    get toolCalls() {
+      return toolCalls;
+    },
+    get searchRetries() {
+      return searchRetries;
     },
     get searchOutcomes() {
       return searchOutcomes;
@@ -91,6 +106,9 @@ export function createRequestContext(signal?: AbortSignal, approver?: Approver):
     },
     remainingMs: () => deadlineAt - Date.now() - (reserveActive ? reserveMs : 0),
     countModelCall: () => ++modelCalls,
+    countToolCall() {
+      toolCalls += 1;
+    },
     async requestApproval(action) {
       if (!approver) return "approved";
       const waitStart = Date.now();
@@ -112,8 +130,9 @@ export function createRequestContext(signal?: AbortSignal, approver?: Approver):
       // Never above the per-request maximum, so a refund can not create budget out of nothing.
       if (searchesLeft < LIMITS.MAX_SEARCHES_PER_REQUEST) searchesLeft += 1;
     },
-    recordSearch(outcome, urls, snippets = []) {
+    recordSearch(outcome, urls, snippets = [], retries = 0) {
       searchOutcomes.push(outcome);
+      searchRetries += retries;
       urls.forEach((url, i) => {
         if (observedUrls.size >= LIMITS.MAX_OBSERVED_URLS && !observedUrls.has(url)) return;
         observedUrls.add(url);

@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { debugEnabled } from "../config.js";
+import { AppError } from "../errors.js";
 import { logStage } from "../observability/log.js";
 
 // Models sometimes wrap JSON in ```json fences or add a sentence around it, even when
@@ -36,7 +37,7 @@ export function parseJsonText(text: string): unknown {
       hasFence: text.includes("```"),
     });
   }
-  throw new Error("Model output is not valid JSON");
+  throw new AppError("invalid_output", "Model output is not valid JSON");
 }
 
 // Describes validation problems using only field paths and error codes, never the
