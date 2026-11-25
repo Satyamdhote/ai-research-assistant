@@ -146,6 +146,10 @@ Rules:
 | Whole-question deadline reached, or client disconnected | work stops; 502 / nothing sent |
 | Analysis output invalid | 502 |
 
+## Production gaps
+
+What this architecture does not yet cover (authentication, per-client limits, persistence, shutdown, evaluation) and when each component would be justified: [production-readiness.md](production-readiness.md).
+
 ## Dependency direction
 
 `http` -> `agents` -> `llm` / `tools` -> `request` / `observability` -> `config` / `types`. Nothing imports `http`.
