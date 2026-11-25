@@ -15,6 +15,7 @@ export type SearchResult = {
   urls: string[]; // https URLs that really appeared in the results
   snippets: string[]; // title + snippet text of each URL, same order as `urls`
   text: string;
+  transient?: boolean; // only on SEARCH_UNAVAILABLE: true when trying again could succeed
 };
 
 // URLs are compared in a normalized form (so "https://a.com/x" and "https://a.com/x/"

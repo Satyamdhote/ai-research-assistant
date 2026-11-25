@@ -40,6 +40,8 @@ The response is a report with these fields: `title`, `summary`, `key_findings`, 
 | 429 | too many questions are already being answered (limit 2 at a time) |
 | 502 | the model could not answer (a generic message; details are logged server-side, never returned) |
 
+Every error body is `{ "error", "code", "request_id" }`. `code` is one fixed word saying why (`bad_request`, `busy`, `auth_failed`, `payment_required`, `rate_limited`, `provider_error`, `model_unavailable`, `truncated`, `invalid_output`, `timeout`, `limit_reached`, `approval_expired`, `internal`); `request_id` is an opaque id, also sent in the `X-Request-Id` header on every response and on every log line of that question. Success bodies are unchanged. `GET /metrics` returns in-memory counters (numbers only: requests by outcome, model/tool calls, searches, search retries, latency buckets); it is unauthenticated, so do not expose it publicly.
+
 ## Configuration (`.env`)
 
 See `.env.example` (names only). `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` (must end in `:free`) are
@@ -77,8 +79,9 @@ src/agents/             orchestrator.ts (the flow), runAgent.ts (bounded tool lo
                         schemas.ts (route, notes, report), prompts.ts (one prompt per role)
 src/llm/                openrouter.ts (the only OpenRouter caller), parseJson.ts
 src/tools/              index.ts (definitions + runTool), search.ts (Tavily), searchResult.ts (markers)
-src/request/context.ts  per-question state: deadline, call counter, search budget
-src/observability/      log.ts (text-free stage logs, optional local trace)
+src/request/context.ts  per-question state: id, deadline, call counters, search budget
+src/errors.ts           error codes and the one mapping from an error to an HTTP answer
+src/observability/      log.ts (text-free stage logs, optional local trace), metrics.ts (in-memory counters)
 test/                   node:test tests and a fake OpenRouter/Tavily (test/helpers/mock.ts)
 scripts/probe-llm.ts    manual live check
 ```

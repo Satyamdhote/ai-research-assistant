@@ -1,6 +1,7 @@
 import { traceEnabled } from "../config.js";
 import type {
   AssistantMessage,
+  ErrorCode,
   ChatMessage,
   FailureReason,
   ResearchStageStatus,
@@ -19,13 +20,17 @@ import type {
 export type FinishReason = "stop" | "length" | "tool_calls" | "other";
 
 export type StageLog = {
-  event: "model_call" | "tool_call" | "route" | "stage_failed" | "request_done" | "parse_failed" | "approval";
+  event: "model_call" | "tool_call" | "route" | "stage_failed" | "request_done" | "request_failed" | "parse_failed" | "approval";
+  requestId?: string; // opaque id that ties all lines of one question together
+  code?: ErrorCode; // why a request failed (fixed word list)
   stage?: Stage;
   call?: number;
   finishReason?: FinishReason;
   toolCalls?: number;
   tool?: ToolName | "<invalid>";
   searchOutcomes?: readonly SearchOutcome[];
+  searchRetries?: number;
+  toolCallCount?: number;
   approval?: "pending" | ApprovalDecision; // approval state only, never the query
   route?: Route;
   routeFallback?: boolean;

@@ -98,6 +98,28 @@ Rules:
 - Logs record the approval state (`pending`, `approved`, `rejected`, `expired`) only; never the query or the id.
 - State is lost on restart; finished approvals are remembered for one TTL so a duplicate decision gets 409, not 404.
 
+## Errors, retries and observability (Milestone 11)
+
+**Error codes.** Every failure that can end a question carries one fixed `ErrorCode` (`src/types.ts`, mapped in `src/errors.ts`). `toClientError` is the only place an error becomes an HTTP answer: statuses and messages are the ones the API always used (a 502 stays a 502, the message stays generic), and the body adds `code` and `request_id`. Provider text, model output, stacks and keys never reach the body.
+
+| Code | From | Status |
+|---|---|---|
+| `bad_request` | invalid input, wrong path or method, unknown or finished approval | 400 / 404 / 405 / 409 / 413 |
+| `busy` | 2 questions already in progress | 429 |
+| `auth_failed`, `payment_required`, `rate_limited`, `provider_error` | OpenRouter 401 / 402 / 429 / other | 502 |
+| `model_unavailable` | network error, timeout, unreadable or empty model reply | 502 |
+| `truncated`, `invalid_output` | cut off by `max_tokens`; reply or tool use failed our validation | 502 |
+| `timeout`, `limit_reached` | question deadline; model-call cap | 502 |
+| `approval_expired` | a human did not answer in time | 410 |
+| `cancelled` | the client left (nothing is sent; counted and logged only) | none |
+| `internal` | anything unexpected | 502 |
+
+**Retries: search only, at most once, and never beyond the budgets.** A search failure is *transient* when it could succeed if repeated (timeout, network error, 5xx) and *permanent* otherwise (401, 429, 432/433, unreadable reply). Only a transient one is retried, once, when all of these hold: a search is still left in the per-question budget (the retry **spends** it, so Tavily requests stay at most 2 per question), the backoff (500 ms, fixed, abort-aware) plus a usable call still fit before the deadline, and the client is still there. The retry reuses the already-approved query, so a human is asked once, not per attempt. Only the final outcome is recorded. **Model calls are never retried**: each retry would spend the 6-call cap and free quota, and a failed model stage already degrades or fails safely.
+
+**Correlation.** Each HTTP request gets an opaque `request_id` (random UUID, no user data). It is the `X-Request-Id` header, the `request_id` of error bodies, and `requestId=` on every structured log line of that question (an approval decision call reuses the question's id). Not every line carries it: the debug-only `parse_failed` line and the plain `console.error` lines do not. `request_failed` logs the error `code`.
+
+**Metrics.** `src/observability/metrics.ts` keeps per-process counters (requests by outcome, model and tool calls, searches by outcome, search retries, latency buckets), created once per app. Inputs are counts and fixed words only. `GET /metrics` returns them as JSON. They reset on restart, and the endpoint has no authentication.
+
 ## Limits (all in `src/config.ts`)
 
 | Limit | Value |
@@ -109,6 +131,7 @@ Rules:
 | Whole-question deadline | 90 s, checked before every network call; per-call timeouts are bounded by the time left |
 | Analysis reserve | 30 s is held back while researching, so slow research cannot starve the analysis |
 | Single model call / search | 30 s / 10 s (or less if less time is left) |
+| Search retries | at most 1 per search, taken from the 2-search budget; 500 ms backoff |
 | Concurrent questions | 2 (HTTP 429 beyond that) |
 | Request body | 10,000 bytes |
 
@@ -118,7 +141,8 @@ Rules:
 |---|---|
 | Supervisor output unusable | falls back to `analysis_only` |
 | Research output unusable, network error, time budget used up, non-JSON reply | research marked `failed:<reason>`; analysis still runs and says so |
-| Provider error (401, 402, 429, ...) at any stage | 502, nothing hidden or retried |
+| Search timeout, network error or 5xx | retried once if budget and time allow, else `SEARCH_UNAVAILABLE` |
+| Provider error (401, 402, 429, ...) at any stage | 502 with its own `code`, nothing hidden or retried |
 | Whole-question deadline reached, or client disconnected | work stops; 502 / nothing sent |
 | Analysis output invalid | 502 |
 

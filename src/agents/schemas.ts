@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AppError } from "../errors.js";
 import { describeIssues, parseJsonText } from "../llm/parseJson.js";
 import { StageFailure } from "../request/context.js";
 import { normalizeUrl } from "../tools/searchResult.js";
@@ -27,7 +28,7 @@ export type ResearchResult = z.infer<typeof ResearchSchema>;
 export function parseResearch(text: string): ResearchResult {
   const result = ResearchSchema.safeParse(parseJsonText(text));
   if (!result.success) {
-    throw new Error(`Model output failed schema validation: ${describeIssues(result.error)}`);
+    throw new AppError("invalid_output", `Model output failed schema validation: ${describeIssues(result.error)}`);
   }
   return result.data;
 }

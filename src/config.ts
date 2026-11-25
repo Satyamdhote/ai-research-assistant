@@ -13,6 +13,8 @@ export const LIMITS = {
   MIN_TIME_TO_START_MS: 1_000, // never start a network call with less than this left
   MODEL_TIMEOUT_MS: 30_000, // longest a single model call may take
   SEARCH_TIMEOUT_MS: 10_000, // longest a single search may take
+  MAX_SEARCH_RETRIES: 1, // a transient search failure is retried at most once (and the retry spends the search budget)
+  SEARCH_RETRY_BACKOFF_MS: 500, // fixed pause before the retry; it counts against the request deadline
   MAX_CONCURRENT_REQUESTS: 2, // questions answered at the same time (free quota is small)
   MAX_BODY_BYTES: 10_000, // a question should never be bigger than this
   APPROVAL_TTL_MS: 120_000, // how long a human has to decide before the approval expires

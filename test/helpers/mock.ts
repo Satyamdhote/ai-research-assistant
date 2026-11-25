@@ -30,6 +30,7 @@ export type ModelReply = {
 
 export type TavilyReply = {
   status?: number;
+  networkError?: boolean; // fetch itself fails
   results?: Array<{ title: string; url: string; content: string }>;
   delayMs?: number;
 };
@@ -142,6 +143,7 @@ export function installMock(script: Script): Mock {
       const headers = init?.headers as Record<string, string>;
       searches.push({ body: JSON.parse(String(init?.body)), authorization: headers.Authorization ?? "" });
       if (reply.delayMs) await sleep(reply.delayMs, init?.signal);
+      if (reply.networkError) throw new TypeError("fetch failed");
       if (reply.status) return new Response("{}", { status: reply.status });
       return new Response(JSON.stringify({ results: reply.results ?? DEFAULT_RESULTS }));
     }

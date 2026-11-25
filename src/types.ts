@@ -16,6 +16,24 @@ export type FailureReason =
   | "time_limit"
   | "call_limit";
 
+// Why a request failed, as the API reports it (Milestone 11). A fixed word list: it is sent to clients
+// and written to logs and metrics, so it never carries free text. See src/errors.ts.
+export type ErrorCode =
+  | "bad_request" // the client's input was invalid
+  | "busy" // too many questions in progress
+  | "auth_failed" // the provider rejected our key (401)
+  | "payment_required" // the provider asked for payment (402)
+  | "rate_limited" // the provider's rate or daily limit (429)
+  | "provider_error" // any other provider HTTP error
+  | "model_unavailable" // network error, timeout or unreadable reply from the model call
+  | "truncated" // the model ran out of tokens before finishing
+  | "invalid_output" // the model's output failed our validation
+  | "timeout" // the request ran out of time
+  | "limit_reached" // a per-request budget (model calls) was used up
+  | "approval_expired" // a human did not answer in time
+  | "cancelled" // the client left (nothing is sent)
+  | "internal"; // anything unexpected
+
 export type ResearchStageStatus = "not_needed" | "completed" | `failed:${FailureReason}`;
 
 // The one list of tool names. ToolName, the tool definitions and the runTool handlers are all
@@ -35,6 +53,15 @@ export type SearchOutcome = "SEARCH_OK" | "SEARCH_OK_NO_RESULTS" | "SEARCH_UNAVA
 //   unverified:  verification itself failed
 export type EvidenceStatus = "supported" | "weak" | "conflicting" | "unsourced" | "unverified";
 export type EvidenceItem = { claim: string; source_url: string | null; status: EvidenceStatus };
+
+// Counts for one finished (or failed) request. Numbers and fixed words only. Used for logs and metrics.
+export type RequestStats = {
+  modelCalls: number;
+  toolCalls: number;
+  searchOutcomes: readonly SearchOutcome[];
+  searchRetries: number;
+  elapsedMs: number;
+};
 
 // Human approval (Milestone 10). The action is created by the application, never by the human.
 export type ApprovalAction = { tool: "search_web"; query: string };

@@ -199,8 +199,8 @@ test("logs show the approval state but never the query or the approval id", asyn
     const pending = (await (await ask()).json()) as Json;
     await decide(pending.approval_id, { decision: "approve" });
     const output = mock.logs.join("\n");
-    assert.match(output, /event=approval approval=pending/);
-    assert.match(output, /event=approval approval=approved/);
+    assert.match(output, /event=approval .*approval=pending/);
+    assert.match(output, /event=approval .*approval=approved/);
     assert.ok(!output.includes("SENTINEL_QUERY"));
     assert.ok(!output.includes(pending.approval_id));
   });
@@ -247,7 +247,7 @@ test("three parallel searches: the two that fit the budget are each shown, none 
       const done = await decide(b.approval_id, { decision: "approve" });
       assert.equal(done.status, 200);
       assert.equal(mock.searches.length, 2);
-      const approvalsAsked = mock.logs.filter((l) => l.includes("event=approval approval=pending")).length;
+      const approvalsAsked = mock.logs.filter((l) => /event=approval .*approval=pending/.test(l)).length;
       assert.equal(approvalsAsked, 2, "no human is asked about the third search");
       const toolMessages = mock.calls.filter((c) => c.agent === "research")[1]!.body.messages.filter((m: any) => m.role === "tool");
       assert.equal(toolMessages.length, 3);

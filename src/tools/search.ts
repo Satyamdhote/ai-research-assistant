@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LIMITS } from "../config.js";
+import { AppError } from "../errors.js";
 import { SEARCH_MARKERS, type SearchResult } from "./searchResult.js";
 
 // Web search through Tavily. Our app runs the search; the model only asks for it.
@@ -21,11 +22,14 @@ const TavilyResponseSchema = z.object({
   ),
 });
 
-const unavailable = (reason: string): SearchResult => ({
+// `transient` marks failures that may succeed if tried again (timeout, network error, 5xx).
+// Bad keys, rate and usage limits and unreadable replies are permanent: a retry would only waste quota.
+const unavailable = (reason: string, transient = false): SearchResult => ({
   outcome: "SEARCH_UNAVAILABLE",
   urls: [],
   snippets: [],
   text: `${SEARCH_MARKERS.unavailable}: ${reason}`,
+  transient,
 });
 
 // Search text goes into the model's context, so keep it on one line and short.
@@ -79,10 +83,10 @@ export async function searchWeb(
     });
   } catch (error) {
     // A client that hung up is not a search outage: stop, and don't record or log one.
-    if (signal?.aborted) throw new Error("Request cancelled", { cause: error });
+    if (signal?.aborted) throw new AppError("cancelled", "Request cancelled", { cause: error });
     const timedOut = error instanceof Error && error.name === "TimeoutError";
     console.error("Search request failed:", timedOut ? "timeout" : "network error");
-    return unavailable(timedOut ? "the search timed out" : "could not reach the search service");
+    return unavailable(timedOut ? "the search timed out" : "could not reach the search service", true);
   }
 
   if (!response.ok) {
@@ -93,7 +97,7 @@ export async function searchWeb(
     if (response.status === 432 || response.status === 433) {
       return unavailable("usage limit reached");
     }
-    return unavailable("the search service returned an error");
+    return unavailable("the search service returned an error", response.status >= 500);
   }
 
   let parsed: z.infer<typeof TavilyResponseSchema>;

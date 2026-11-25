@@ -1,6 +1,6 @@
 import { logStage } from "../observability/log.js";
 import { StageFailure, createRequestContext, withAnalysisReserved, type RequestContext } from "../request/context.js";
-import type { Approver, EvidenceItem, ResearchStageStatus } from "../types.js";
+import type { Approver, EvidenceItem, RequestStats, ResearchStageStatus } from "../types.js";
 import { ANALYSIS_SPECIALIST_PROMPT, RESEARCH_SPECIALIST_PROMPT, SUPERVISOR_PROMPT } from "./prompts.js";
 import { runAgent } from "./runAgent.js";
 import { summarize, unverified, verifyNotes } from "./verify.js";
@@ -97,17 +97,39 @@ async function doResearch(
   } catch (error) {
     // Provider errors (429 etc.) and a cancelled request are plain Errors: they stop the request.
     if (!(error instanceof StageFailure)) throw error;
-    logStage({ event: "stage_failed", stage: "research", reason: error.reason });
+    logStage({ event: "stage_failed", requestId: ctx.requestId, stage: "research", reason: error.reason });
     return { researchStage: `failed:${error.reason}` };
   }
 }
 
 // Answers one question. This is the only function the HTTP layer calls.
-export async function answerQuestion(question: string, options: { signal?: AbortSignal; approver?: Approver } = {}): Promise<ResearchResult & { evidence?: EvidenceItem[] }> {
-  const ctx = createRequestContext(options.signal, options.approver);
+// `onFinish` receives the request's counts whether it succeeded or failed (for metrics).
+export type AnswerOptions = {
+  signal?: AbortSignal;
+  approver?: Approver;
+  requestId?: string;
+  onFinish?: (stats: RequestStats) => void;
+};
+
+export async function answerQuestion(question: string, options: AnswerOptions = {}): Promise<ResearchResult & { evidence?: EvidenceItem[] }> {
+  const ctx = createRequestContext(options.signal, options.approver, options.requestId);
+  try {
+    return await runPipeline(question, ctx);
+  } finally {
+    options.onFinish?.({
+      modelCalls: ctx.modelCalls,
+      toolCalls: ctx.toolCalls,
+      searchOutcomes: [...ctx.searchOutcomes],
+      searchRetries: ctx.searchRetries,
+      elapsedMs: Date.now() - ctx.startedAt,
+    });
+  }
+}
+
+async function runPipeline(question: string, ctx: RequestContext): Promise<ResearchResult & { evidence?: EvidenceItem[] }> {
 
   const { decision, fallback } = await chooseRoute(question, ctx);
-  logStage({ event: "route", stage: "supervisor", route: decision.route, ...(fallback ? { routeFallback: true } : {}) });
+  logStage({ event: "route", requestId: ctx.requestId, stage: "supervisor", route: decision.route, ...(fallback ? { routeFallback: true } : {}) });
 
   let researchStage: ResearchStageStatus = "not_needed";
   let notes: Notes | undefined;
@@ -122,7 +144,7 @@ export async function answerQuestion(question: string, options: { signal?: Abort
     try {
       evidence = EvidenceListSchema.parse(verifyNotes(notes, ctx.observedSnippets));
     } catch {
-      logStage({ event: "stage_failed", stage: "research", reason: "model_error" });
+      logStage({ event: "stage_failed", requestId: ctx.requestId, stage: "research", reason: "model_error" });
       evidence = unverified(notes);
     }
   }
@@ -143,9 +165,12 @@ export async function answerQuestion(question: string, options: { signal?: Abort
 
   logStage({
     event: "request_done",
+    requestId: ctx.requestId,
     route: decision.route,
     researchStage,
     searchOutcomes: ctx.searchOutcomes,
+    searchRetries: ctx.searchRetries,
+    toolCallCount: ctx.toolCalls,
     modelCalls: ctx.modelCalls,
     elapsedMs: Date.now() - ctx.startedAt,
   });
