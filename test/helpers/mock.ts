@@ -11,7 +11,7 @@ export function setTestEnv(): void {
   process.env.OPENROUTER_API_KEY = TEST_KEY;
   process.env.OPENROUTER_MODEL = "mock/model:free";
   process.env.TAVILY_API_KEY = TEST_TAVILY_KEY;
-  for (const name of ["DEBUG_LLM", "TRACE_AGENTS", "REQUEST_DEADLINE_MS", "NODE_ENV"]) {
+  for (const name of ["DEBUG_LLM", "TRACE_AGENTS", "REQUEST_DEADLINE_MS", "NODE_ENV", "REQUIRE_SEARCH_APPROVAL", "APPROVAL_TTL_MS"]) {
     delete process.env[name];
   }
 }

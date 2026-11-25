@@ -1,6 +1,6 @@
 import { logStage } from "../observability/log.js";
 import { StageFailure, createRequestContext, withAnalysisReserved, type RequestContext } from "../request/context.js";
-import type { EvidenceItem, ResearchStageStatus } from "../types.js";
+import type { Approver, EvidenceItem, ResearchStageStatus } from "../types.js";
 import { ANALYSIS_SPECIALIST_PROMPT, RESEARCH_SPECIALIST_PROMPT, SUPERVISOR_PROMPT } from "./prompts.js";
 import { runAgent } from "./runAgent.js";
 import { summarize, unverified, verifyNotes } from "./verify.js";
@@ -17,7 +17,7 @@ import { EvidenceListSchema, FALLBACK_ROUTE, parseNotes, parseResearch, parseRou
 
 const SUPERVISOR_MAX_TOKENS = 1024;
 const RESEARCH_MAX_TOKENS = 2048;
-const ANALYSIS_MAX_TOKENS = 2048;
+const ANALYSIS_MAX_TOKENS = 3072; // reasoning tokens count too; 2048 was cut off in live runs (see learning.md, Milestone 10)
 const RESEARCH_MAX_TOOL_ROUNDS = 2; // at most 2 rounds of tools = at most 3 research model calls
 
 // The block that tells the analysis specialist what really happened. Both facts come
@@ -103,8 +103,8 @@ async function doResearch(
 }
 
 // Answers one question. This is the only function the HTTP layer calls.
-export async function answerQuestion(question: string, options: { signal?: AbortSignal } = {}): Promise<ResearchResult & { evidence?: EvidenceItem[] }> {
-  const ctx = createRequestContext(options.signal);
+export async function answerQuestion(question: string, options: { signal?: AbortSignal; approver?: Approver } = {}): Promise<ResearchResult & { evidence?: EvidenceItem[] }> {
+  const ctx = createRequestContext(options.signal, options.approver);
 
   const { decision, fallback } = await chooseRoute(question, ctx);
   logStage({ event: "route", stage: "supervisor", route: decision.route, ...(fallback ? { routeFallback: true } : {}) });

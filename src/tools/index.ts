@@ -102,13 +102,22 @@ const handlers: Record<ToolName, ToolHandler> = {
     if (remaining < LIMITS.MIN_TIME_TO_START_MS) {
       return { text: "Error: request time limit reached" };
     }
-    // Take the search from the budget (check and spend happen together, see spendSearch).
+    // Take the search from the budget FIRST (check and spend happen together, see spendSearch),
+    // so a human is never asked about a search that could not run anyway.
     if (!ctx.spendSearch()) {
       return { text: "Error: search limit reached for this request" };
     }
+    // A gated action: nothing is sent until a human approves exactly this query.
+    // (The decision is by the application's own record of the query, not by anything the model says.)
+    const decision = await ctx.requestApproval({ tool: "search_web", query: parsed.data.query });
+    if (ctx.signal?.aborted) throw new Error("Request cancelled");
+    if (decision !== "approved") {
+      ctx.refundSearch(); // nothing was sent, so the reserved search goes back
+      return { text: "Error: the search was not approved by a human, so it was not run" };
+    }
     const result = await searchWeb(
       parsed.data.query,
-      Math.min(LIMITS.SEARCH_TIMEOUT_MS, remaining),
+      Math.min(LIMITS.SEARCH_TIMEOUT_MS, ctx.remainingMs()), // fresh: the human wait does not count
       ctx.signal
     );
     return { text: result.text, search: { outcome: result.outcome, urls: result.urls, snippets: result.snippets } };

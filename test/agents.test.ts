@@ -38,7 +38,7 @@ test("every request is free-only, allows no fallback, and tools are limited per 
     assert.equal(call.body.provider.allow_fallbacks, false);
   }
   const sizes = Object.fromEntries(r.mock.calls.map((c) => [c.agent, c.body.max_tokens]));
-  assert.deepEqual(sizes, { supervisor: 1024, research: 2048, analysis: 2048 });
+  assert.deepEqual(sizes, { supervisor: 1024, research: 2048, analysis: 3072 });
   const research = r.mock.calls.find((c) => c.agent === "research")!;
   assert.deepEqual(research.body.tools.map((t: any) => t.function.name).sort(), ["get_current_date", "search_web"]);
   assert.deepEqual(r.mock.searches[0]!.body.search_depth, "basic");
