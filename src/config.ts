@@ -9,14 +9,27 @@ export const LIMITS = {
   MAX_SEARCHES_PER_REQUEST: 2, // each search costs a Tavily credit
   MAX_OBSERVED_URLS: 50, // backstop for the per-request URL set (2 searches x 5 results = 10 today)
   DEFAULT_DEADLINE_MS: 90_000, // one shared time limit for the whole question
-  ANALYSIS_RESERVE_MS: 25_000, // time kept back so research can never starve the analysis
+  ANALYSIS_RESERVE_MS: 30_000, // time kept back so research can never starve the analysis (= one full model call)
   MIN_TIME_TO_START_MS: 1_000, // never start a network call with less than this left
   MODEL_TIMEOUT_MS: 30_000, // longest a single model call may take
   SEARCH_TIMEOUT_MS: 10_000, // longest a single search may take
   MAX_CONCURRENT_REQUESTS: 2, // questions answered at the same time (free quota is small)
   MAX_BODY_BYTES: 10_000, // a question should never be bigger than this
+  APPROVAL_TTL_MS: 120_000, // how long a human has to decide before the approval expires
   MAX_STORED_SNIPPET_CHARS: 700, // per observed URL (title + snippet) kept for verification
 } as const;
+
+// Human approval. REQUIRE_SEARCH_APPROVAL=1 makes every web search wait for a human.
+// It is a server setting on purpose: a client cannot switch it off.
+export function searchApprovalRequired(): boolean {
+  return process.env.REQUIRE_SEARCH_APPROVAL === "1";
+}
+
+// APPROVAL_TTL_MS exists only so tests can shorten the wait.
+export function getApprovalTtlMs(): number {
+  const override = Number(process.env.APPROVAL_TTL_MS);
+  return Number.isFinite(override) && override >= 20 ? override : LIMITS.APPROVAL_TTL_MS;
+}
 
 // Evidence verification tuning (deterministic heuristics, see src/agents/verify.ts).
 export const VERIFY = {

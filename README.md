@@ -26,11 +26,17 @@ curl -s -X POST localhost:3000/ask \
 
 The response is a report with these fields: `title`, `summary`, `key_findings`, `risks`, `conclusion`. When web research ran, it also has an optional `evidence` array: one `{claim, source_url, status}` per research finding, where `status` is computed by the application (`supported`, `weak`, `conflicting`, `unsourced`, `unverified`), never by a model. `supported` means the cited source's search snippet shares the claim's key terms, contains every number the claim states, and does not contradict its negation. It is not proof the claim is true.
 
+**Optional human approval.** With `REQUIRE_SEARCH_APPROVAL=1` on the server, a web search waits for a human: `/ask` returns `202` with an `approval_id` and the proposed query, and `POST /approvals/:id` with `{"decision":"approve"}` or `{"decision":"reject"}` continues the question (details in `docs/architecture.md`). Unset by default; responses are unchanged then.
+
 | Status | Meaning |
 |---|---|
 | 200 | the report |
-| 400 | body is not valid JSON, `question` missing/blank, or the body is over 10,000 bytes |
-| 404 / 405 | wrong path / not POST |
+| 202 | only with `REQUIRE_SEARCH_APPROVAL=1`: a search is waiting for a human (`approval_id`, the proposed `action`, `expires_in_s`) |
+| 400 | body is not valid JSON, `question` missing/blank, or (on `/approvals/:id`) `decision` is not `approve` or `reject` |
+| 404 / 405 | wrong path or unknown approval id / not POST |
+| 409 | `/approvals/:id` only: that approval already has a final status, or its question is no longer running |
+| 410 | `/approvals/:id` only: an approval expired, so the question was stopped |
+| 413 | request body is over 10,000 bytes |
 | 429 | too many questions are already being answered (limit 2 at a time) |
 | 502 | the model could not answer (a generic message; details are logged server-side, never returned) |
 

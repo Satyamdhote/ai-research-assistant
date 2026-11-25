@@ -1,5 +1,5 @@
 import { LIMITS, getRequestDeadlineMs } from "../config.js";
-import type { FailureReason, SearchOutcome } from "../types.js";
+import type { ApprovalAction, ApprovalDecision, Approver, FailureReason, SearchOutcome } from "../types.js";
 
 // A stage-level failure: the model's output (or the call that should have produced it)
 // was unusable. The research stage tolerates these and carries on with honest disclosure.
@@ -33,6 +33,14 @@ export type RequestContext = {
   countModelCall(): number;
   /** Takes one search from the per-request budget. False when none is left. Synchronous on purpose. */
   spendSearch(): boolean;
+  /** Gives back a search taken by spendSearch that was never run (for example a human said no). */
+  refundSearch(): void;
+  /**
+   * Asks a human to approve a gated action and waits for the answer. The time spent waiting is
+   * NOT charged to the request deadline (a person is slower than a machine); the approval's own
+   * expiry bounds the wait. Without an approver (the default) nothing is gated: "approved".
+   */
+  requestApproval(action: ApprovalAction): Promise<ApprovalDecision>;
   /** Records what a real search returned. `urls` must already be normalized; `snippets` (optional) is parallel to `urls`. */
   recordSearch(outcome: SearchOutcome, urls: readonly string[], snippets?: readonly string[]): void;
 };
@@ -44,15 +52,15 @@ export type ModelContext = Pick<
 >;
 
 // The part of the context a tool needs.
-export type ToolContext = Pick<RequestContext, "signal" | "remainingMs" | "spendSearch">;
+export type ToolContext = Pick<RequestContext, "signal" | "remainingMs" | "spendSearch" | "refundSearch" | "requestApproval">;
 
 // Only withAnalysisReserved may switch the reserve on or off.
 const reserveSwitches = new WeakMap<RequestContext, (on: boolean) => void>();
 
-export function createRequestContext(signal?: AbortSignal): RequestContext {
+export function createRequestContext(signal?: AbortSignal, approver?: Approver): RequestContext {
   const totalMs = getRequestDeadlineMs();
   const startedAt = Date.now();
-  const deadlineAt = startedAt + totalMs;
+  let deadlineAt = startedAt + totalMs; // only requestApproval moves it (human wait time is paused)
   // Never reserve more than 30% of a (possibly test-shortened) deadline.
   const reserveMs = Math.min(LIMITS.ANALYSIS_RESERVE_MS, Math.floor(totalMs * 0.3));
 
@@ -83,6 +91,15 @@ export function createRequestContext(signal?: AbortSignal): RequestContext {
     },
     remainingMs: () => deadlineAt - Date.now() - (reserveActive ? reserveMs : 0),
     countModelCall: () => ++modelCalls,
+    async requestApproval(action) {
+      if (!approver) return "approved";
+      const waitStart = Date.now();
+      try {
+        return await approver(action);
+      } finally {
+        deadlineAt += Date.now() - waitStart;
+      }
+    },
     spendSearch() {
       // IMPORTANT: check and decrement stay in one synchronous stretch (no `await`). Tools of one
       // round run in parallel, and this is what stops two of them from both taking the last search.
@@ -90,6 +107,10 @@ export function createRequestContext(signal?: AbortSignal): RequestContext {
       if (searchesLeft <= 0) return false;
       searchesLeft -= 1;
       return true;
+    },
+    refundSearch() {
+      // Never above the per-request maximum, so a refund can not create budget out of nothing.
+      if (searchesLeft < LIMITS.MAX_SEARCHES_PER_REQUEST) searchesLeft += 1;
     },
     recordSearch(outcome, urls, snippets = []) {
       searchOutcomes.push(outcome);

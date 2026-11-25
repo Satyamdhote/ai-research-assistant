@@ -107,4 +107,5 @@ Output format (strict):
     "conclusion": string
   }
 - Keep it compact: a short summary, 3 to 5 key_findings, 2 to 4 risks, short sentences.
+- Think briefly: the findings are already prepared for you, so do not deliberate at length. Reply with the JSON object soon.
 - Apply the honesty rules inside the fields. If something is uncertain or unknown, say so there.`;

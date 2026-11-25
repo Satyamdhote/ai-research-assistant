@@ -73,6 +73,31 @@ Rules:
 - Agents do not share message lists. What crosses between specialists is chosen by the orchestrator: validated
   notes plus the application-written status block, never another agent's history.
 
+## Human approval (Milestone 10)
+
+Off by default. With `REQUIRE_SEARCH_APPROVAL=1` (a server setting; a client cannot turn it off) every `search_web` call is a **gated action**: it waits for a human before anything is spent or sent.
+
+State machine (`src/request/approvals.ts`, in memory, one store per app instance):
+
+```
+pending --approve--> approved   (terminal)
+pending --reject---> rejected   (terminal)
+pending --timeout--> expired    (terminal; also when the client abandons the question)
+```
+
+Any other transition is an `InvalidTransition` (HTTP 409).
+
+Flow: `POST /ask` runs the supervisor and research model calls as usual. When research asks for a search, the question pauses and `/ask` answers `202 {approval_id, status:"pending", action:{tool,query}, expires_in_s}`. `POST /approvals/:id` with `{"decision":"approve"|"reject"}` resumes it and returns the report (200), or the next pending approval (202) if a second search is requested. Rejected means the model is told "not approved" and no search runs; the report then says `search_outcomes: NOT_USED`. Expired or abandoned means the whole question is stopped; a client that is waiting at that moment gets `410` (and a client that has left gets nothing).
+
+Several searches in one round (the model may ask for up to 3) each get their own approval. They are queued per question and shown one at a time, in order, so none is lost. The search budget is taken **before** a human is asked (a search that could not run anyway is never put to a human), and it is given back if the human rejects, so a rejected search does not use up the question's budget.
+
+Rules:
+- The application stores the action; the decision body is strict and carries only `decision`, so it can never change the query. Approval covers that one search only.
+- `approval_id` is a random UUID tied to one question. Knowing it is what allows deciding (a bearer capability): **there is no approver authentication**, so production would need real identity separate from the requester.
+- The wait is not charged to the 90 s question deadline (`requestApproval` in `src/request/context.ts` shifts it), but is bounded by `APPROVAL_TTL_MS` (120 s). While waiting, no model calls run. The question keeps its concurrency slot, so at most `MAX_CONCURRENT_REQUESTS` approvals can be pending.
+- Logs record the approval state (`pending`, `approved`, `rejected`, `expired`) only; never the query or the id.
+- State is lost on restart; finished approvals are remembered for one TTL so a duplicate decision gets 409, not 404.
+
 ## Limits (all in `src/config.ts`)
 
 | Limit | Value |
@@ -82,7 +107,7 @@ Rules:
 | Observed URLs per question | 50 (backstop; 2 searches give at most 10) |
 | Tool calls per round | 3 (more fails before anything runs) |
 | Whole-question deadline | 90 s, checked before every network call; per-call timeouts are bounded by the time left |
-| Analysis reserve | 25 s is held back while researching, so slow research cannot starve the analysis |
+| Analysis reserve | 30 s is held back while researching, so slow research cannot starve the analysis |
 | Single model call / search | 30 s / 10 s (or less if less time is left) |
 | Concurrent questions | 2 (HTTP 429 beyond that) |
 | Request body | 10,000 bytes |

@@ -44,11 +44,11 @@ Build a practical, API-only multi-agent AI research assistant while learning the
 | 7 | Parallel agent execution (scoped to parallel tool calls) | Complete |
 | 8 | Shared context and state management | Complete |
 | 9 | Evidence verification | Complete |
-| 10 | Human approval workflow | **Next** |
-| 11 | Retries, error handling, and observability | Planned |
+| 10 | Human approval workflow | Complete |
+| 11 | Retries, error handling, and observability | **Next** |
 | 12 | Production evolution | Planned |
 
-**Current next action:** Plan Milestone 10 (human approval workflow) by inspecting the existing implementation. Do not implement until the plan is reviewed and approved.
+**Current next action:** Plan Milestone 11 (retries, error handling, and observability) by inspecting the existing implementation. Do not implement until the plan is reviewed and approved.
 
 ---
 
@@ -200,10 +200,6 @@ Build a practical, API-only multi-agent AI research assistant while learning the
 - Heuristics only: keyword overlap on snippets, not full pages or semantic checks. A model that copies snippet wording into a claim can still earn `supported`. Thresholds (0.4 / 0.5) are untuned and unverified against real search results.
 - "Unobserved" is merged into `unsourced` because `parseNotes` already drops unobserved URLs.
 
----
-
-## Remaining milestones
-
 ### Milestone 10: Human approval workflow
 
 **Learning objectives**
@@ -217,6 +213,25 @@ Build a practical, API-only multi-agent AI research assistant while learning the
 - Gated actions cannot proceed without an explicit valid approval.
 - Tests cover approval, rejection, expiry, duplicate requests, and invalid transitions.
 - No external side effect is enabled without explicit authorization.
+
+**Approved API additions (2026-11-25).** The user explicitly approved: opt-in `REQUIRE_SEARCH_APPROVAL=1` (off by default, responses unchanged when off); `/ask` may answer `202` with a pending approval; new endpoint `POST /approvals/:id` (200/202/400/404/409/410). Approver identity is NOT authenticated (mechanism only; see `docs/architecture.md`).
+
+**Outcome recorded**
+- Gated action: `search_web`, behind `REQUIRE_SEARCH_APPROVAL=1` (server setting, off by default). Nothing is spent or sent before a human approves that exact query.
+- State machine in `src/request/approvals.ts`: `pending -> approved | rejected | expired`, all terminal; any other transition is `InvalidTransition` (HTTP 409). The application stores the action; the decision body carries only `decision`, so it cannot change the query. Ids are random UUIDs tied to one question.
+- Flow: `/ask` returns 202 with the pending approval, `POST /approvals/:id` resumes it (200 report, or 202 for a further approval). Human wait is not charged to the 90 s deadline; it is bounded by `APPROVAL_TTL_MS` (120 s). Expiry or an abandoned client stops the question. Documented in `docs/architecture.md` and `README.md`.
+- Budget changes found by live testing (user-approved): analysis `max_tokens` 2048 -> 3072 and `ANALYSIS_RESERVE_MS` 25 s -> 30 s, plus a brevity line in the analysis prompt. A live analysis call had used 1888 of 2048 tokens (mostly hidden reasoning) and one earlier run was truncated (`finishReason=length`).
+- Mocked tests: 100/100 (state machine, no search before approval, approve, reject, expiry, duplicate, unknown id, bad body, policy off, logs without query or id, client disconnect, human wait not charged to the deadline). Typecheck, lint and build pass.
+- Live tests (approved), 3 runs with the gate on: approve then reject of a second search both worked. Run 1 ended in a 502 (analysis truncated). After the budget changes the analysis call used 1033 of 3072 tokens, took about 20 s, and the question returned 200 with `evidence` (5 model calls, 1 search).
+
+**Not done**
+- No approver authentication: the approval id works like a password. Production would need real identity separate from the requester.
+- State is in memory only (lost on restart); a pending question keeps its concurrency slot for up to the TTL.
+- Expiry and parallel approvals are covered by mocked tests only, not live. The token and reserve changes rest on two live runs and provider speed varies.
+
+---
+
+## Remaining milestones
 
 ### Milestone 11: Retries, error handling, and observability
 

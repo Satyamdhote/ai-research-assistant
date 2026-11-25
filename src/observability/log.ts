@@ -5,6 +5,7 @@ import type {
   FailureReason,
   ResearchStageStatus,
   Route,
+  ApprovalDecision,
   SearchOutcome,
   Stage,
   ToolCall,
@@ -18,13 +19,14 @@ import type {
 export type FinishReason = "stop" | "length" | "tool_calls" | "other";
 
 export type StageLog = {
-  event: "model_call" | "tool_call" | "route" | "stage_failed" | "request_done" | "parse_failed";
+  event: "model_call" | "tool_call" | "route" | "stage_failed" | "request_done" | "parse_failed" | "approval";
   stage?: Stage;
   call?: number;
   finishReason?: FinishReason;
   toolCalls?: number;
   tool?: ToolName | "<invalid>";
   searchOutcomes?: readonly SearchOutcome[];
+  approval?: "pending" | ApprovalDecision; // approval state only, never the query
   route?: Route;
   routeFallback?: boolean;
   researchStage?: ResearchStageStatus;

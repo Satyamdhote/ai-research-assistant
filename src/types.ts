@@ -36,6 +36,11 @@ export type SearchOutcome = "SEARCH_OK" | "SEARCH_OK_NO_RESULTS" | "SEARCH_UNAVA
 export type EvidenceStatus = "supported" | "weak" | "conflicting" | "unsourced" | "unverified";
 export type EvidenceItem = { claim: string; source_url: string | null; status: EvidenceStatus };
 
+// Human approval (Milestone 10). The action is created by the application, never by the human.
+export type ApprovalAction = { tool: "search_web"; query: string };
+export type ApprovalDecision = "approved" | "rejected" | "expired";
+export type Approver = (action: ApprovalAction) => Promise<ApprovalDecision>;
+
 // OpenRouter chat messages. The assistant message is kept as an open object on purpose:
 // when the model asks for a tool we must send the WHOLE message back unchanged
 // (including fields such as reasoning_details), so we never rebuild or trim it.
